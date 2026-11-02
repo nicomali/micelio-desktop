@@ -16,9 +16,121 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from engine.config import config_manager
+
+SAFE_COMMAND_PREFIXES: tuple[str, ...] = (
+    "git status",
+    "git diff",
+    "git log",
+    "git branch",
+    "pytest",
+    "python --version",
+    "node --version",
+    "npm test",
+    "get-childitem",
+    "dir",
+    "ls",
+)
+
+SHELL_CHAIN_OPERATORS: tuple[str, ...] = (
+    ";",
+    "|",
+    "&&",
+    "||",
+    "&",
+    "`",
+    "$(",
+    ">",
+    "<",
+    "\n",
+    "\r",
+)
+
+DESTRUCTIVE_COMMAND_TOKENS: tuple[str, ...] = (
+    "rm -rf",
+    "remove-item",
+    "del /",
+    "format ",
+    "git push --force",
+    "drop table",
+)
+
+
+def has_shell_chaining(command_line: str) -> bool:
+    """Return True if the command contains shell chaining, redirection, or injection operators."""
+    return any(op in command_line for op in SHELL_CHAIN_OPERATORS)
+
+
+def is_whitelisted(
+    command_line: str,
+    allowed_prefixes: Optional[List[str]] = None,
+) -> bool:
+    """
+    A command is considered in the safe whitelist ONLY if:
+    1. It starts with an allowed safe prefix (`SAFE_COMMAND_PREFIXES`), AND
+    2. It does NOT contain shell chaining or injection operators (`;`, `|`, `&&`, `||`, `` ` ``, `$(`, `>`, `<`, `\\n`).
+    3. It does NOT contain destructive command tokens.
+    """
+    cleaned = command_line.strip()
+    if not cleaned:
+        return False
+    if has_shell_chaining(cleaned):
+        return False
+    lowered = cleaned.lower()
+    if any(tok in lowered for tok in DESTRUCTIVE_COMMAND_TOKENS):
+        return False
+    prefixes = allowed_prefixes if allowed_prefixes is not None else list(SAFE_COMMAND_PREFIXES)
+    for prefix in prefixes:
+        p_low = prefix.strip().lower()
+        if not p_low:
+            continue
+        if lowered == p_low or lowered.startswith(p_low + " "):
+            return True
+    return False
+
+
+def is_destructive(
+    command_line: str,
+    require_approval_for_commands: Optional[bool] = None,
+) -> bool:
+    """
+    Check if a command is destructive or bypasses the command whitelist.
+    When `require_approval_for_commands` is active, any command that is not strictly
+    `is_whitelisted` (including whitelisted prefixes chained with `;`, `|`, `&&`, etc.)
+    is flagged as requiring HITL approval.
+    """
+    cleaned = command_line.strip()
+    lowered = cleaned.lower()
+    if any(tok in lowered for tok in DESTRUCTIVE_COMMAND_TOKENS):
+        return True
+
+    sec = config_manager.config.security
+    req_all = (
+        require_approval_for_commands
+        if require_approval_for_commands is not None
+        else sec.require_approval_for_commands
+    )
+    if req_all:
+        if not is_whitelisted(cleaned, sec.auto_approved_command_prefixes):
+            return True
+
+    return False
+
+
+def requires_command_approval(command_line: str) -> bool:
+    """Return True if the command must wait for Human-in-the-Loop (HITL) approval."""
+    sec = config_manager.config.security
+    if any(tok in command_line.lower() for tok in DESTRUCTIVE_COMMAND_TOKENS):
+        if sec.require_approval_for_destructive_commands or sec.require_approval_for_commands:
+            return True
+    if is_whitelisted(command_line, sec.auto_approved_command_prefixes):
+        return False
+    if sec.require_approval_for_commands:
+        return True
+    return False
 
 
 @dataclass

@@ -15,17 +15,18 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from engine.config import config_manager
-from engine.core.agent import orchestrator
+from engine.config import config_manager, get_app_data_dir
+from engine.core.agent import AgentOrchestrator, orchestrator
 from engine.core.scheduler import scheduler_manager
 from engine.core.subagents import subagent_manager
 from engine.core.transcript import (
@@ -35,14 +36,48 @@ from engine.core.transcript import (
 )
 from engine.mcp_host.manager import mcp_host
 from engine.skills.loader import discover_skills, discover_workspace_playbooks
-from engine.tools.filesystem import IGNORE_DIRS
+from engine.tools.filesystem import IGNORE_DIRS, is_path_within_sandbox, resolve_path
 from engine.tools.terminal import terminal_manager
 
 app = FastAPI(title="Micelio Desktop Core Engine (Santander)", version="1.0.0")
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "null",
+    "file://",
+    "app://.",
+]
+ALLOWED_ORIGIN_REGEX = r"^(http://(localhost|127\.0\.0\.1)(:\d+)?|file://.*|app://.*)$"
+
+BLOCKED_NATIVE_EXTENSIONS = {
+    ".exe",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".vbs",
+    ".js",
+    ".wsf",
+    ".msi",
+    ".scr",
+    ".com",
+}
+
+
+def is_allowed_ws_origin(origin: Optional[str]) -> bool:
+    """Validate WebSocket Origin header if provided (allow local dev, Electron file://, app://, or empty)."""
+    if not origin:
+        return True
+    cleaned = origin.strip()
+    if not cleaned or cleaned in ALLOWED_ORIGINS:
+        return True
+    return bool(re.match(ALLOWED_ORIGIN_REGEX, cleaned))
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -248,15 +283,41 @@ async def get_workspace_tree(max_entries: int = 120) -> Dict[str, Any]:
 
 
 @app.post("/api/workspace/open-external")
+@app.post("/api/workspace/open-native")
 async def open_workspace_file_external(payload: Dict[str, str]) -> Dict[str, Any]:
     """Open an operational deliverable (.xlsx, .pptx, .pdf, etc.) in its native Windows application."""
     config_manager.config = config_manager._load()
-    root = Path(config_manager.config.active_workspace).resolve()
-    raw_path = payload.get("path", "").strip().lstrip("@")
-    target = Path(raw_path)
-    if not target.is_absolute():
-        target = (root / target).resolve()
-    if not target.exists():
+    raw_path = payload.get("path", "").strip()
+    if not raw_path:
+        return {"ok": False, "error": "Ruta de archivo vacía."}
+
+    target = resolve_path(raw_path).resolve()
+    workspace_root = Path(config_manager.config.active_workspace).resolve()
+    micelio_root = get_app_data_dir().resolve()
+
+    in_allowed_root = False
+    for allowed_root in (workspace_root, micelio_root):
+        try:
+            target.relative_to(allowed_root)
+            in_allowed_root = True
+            break
+        except ValueError:
+            continue
+
+    if not in_allowed_root:
+        return {
+            "ok": False,
+            "error": f"Acceso bloqueado por seguridad: '{target}' está fuera del workspace activo ({workspace_root}).",
+        }
+
+    ext = target.suffix.lower()
+    if ext in BLOCKED_NATIVE_EXTENSIONS:
+        return {
+            "ok": False,
+            "error": f"Extensión ejecutable o de script bloqueada por seguridad ({ext}): {target.name}",
+        }
+
+    if not target.exists() or not target.is_file():
         return {"ok": False, "error": f"No existe el archivo: {target}"}
     try:
         if hasattr(os, "startfile"):
@@ -270,10 +331,13 @@ async def open_workspace_file_external(payload: Dict[str, str]) -> Dict[str, Any
 async def read_workspace_file(path: str) -> Dict[str, Any]:
     """Read a file from the active workspace so the user can preview it in the right drawer."""
     config_manager.config = config_manager._load()
-    root = Path(config_manager.config.active_workspace).resolve()
-    target = Path(path)
-    if not target.is_absolute():
-        target = (root / target).resolve()
+    target = resolve_path(path)
+    if not is_path_within_sandbox(target):
+        return {
+            "error": f"Acceso bloqueado por seguridad: '{target}' está fuera del workspace activo.",
+            "content": "",
+            "name": target.name,
+        }
     if not target.exists() or not target.is_file():
         return {"error": f"Archivo no encontrado: {target}", "content": "", "name": target.name}
     try:
@@ -345,19 +409,66 @@ async def get_runtime_status() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Real-time WebSocket Event Stream
+# Real-time WebSocket Event Stream & Connection Lifecycle Manager
 # ---------------------------------------------------------------------------
+class ConnectionManager:
+    """Manages active WebSocket clients and cleans up pending HITL/question futures on disconnect."""
+
+    def __init__(self, agent_orchestrator: Optional[AgentOrchestrator] = None) -> None:
+        self._orchestrator = agent_orchestrator or orchestrator
+        self.active_connections: List[WebSocket] = []
+        self._ws_listeners: Dict[int, Callable[[Dict[str, Any]], Any]] = {}
+        self.pending_questions: Dict[str, asyncio.Future] = self._orchestrator._pending_questions
+        self.pending_approvals: Dict[str, asyncio.Future] = self._orchestrator._pending_approvals
+
+    async def connect(self, ws: WebSocket) -> Callable[[Dict[str, Any]], Any]:
+        await ws.accept()
+        self.active_connections.append(ws)
+
+        async def send_event(ev: Dict[str, Any]) -> None:
+            try:
+                await ws.send_json(ev)
+            except Exception:
+                pass
+
+        self._ws_listeners[id(ws)] = send_event
+        self._orchestrator.add_event_listener(send_event)
+        return send_event
+
+    def disconnect(self, ws: Optional[WebSocket] = None) -> None:
+        if ws is not None:
+            if ws in self.active_connections:
+                self.active_connections.remove(ws)
+            cb = self._ws_listeners.pop(id(ws), None)
+            if cb is not None:
+                self._orchestrator.remove_event_listener(cb)
+
+        # Clean up any pending question/approval futures if no active connections remain
+        # or if disconnect was called to release pending futures.
+        if not self.active_connections:
+            for fut in list(self.pending_questions.values()):
+                if fut and not fut.done():
+                    fut.cancel()
+            self.pending_questions.clear()
+
+            for fut in list(self.pending_approvals.values()):
+                if fut and not fut.done():
+                    fut.cancel()
+            self.pending_approvals.clear()
+            self._orchestrator.cancel_pending_futures()
+
+
+manager = ConnectionManager(orchestrator)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
-    await ws.accept()
+    origin = ws.headers.get("origin")
+    if not is_allowed_ws_origin(origin):
+        await ws.close(code=1008)
+        return
 
-    async def send_event(ev: Dict[str, Any]) -> None:
-        try:
-            await ws.send_json(ev)
-        except Exception:
-            pass
-
-    orchestrator.add_event_listener(send_event)
+    await manager.connect(ws)
     try:
         while True:
             data = await ws.receive_json()
@@ -386,7 +497,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        orchestrator.remove_event_listener(send_event)
+        manager.disconnect(ws)
 
 
 if __name__ == "__main__":

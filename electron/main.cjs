@@ -37,6 +37,15 @@ async function ensurePythonEngine() {
     env: { ...process.env, MICELIO_ENGINE_PORT: String(ENGINE_PORT) },
     stdio: 'inherit',
   });
+
+  // Poll /api/health until the FastAPI server is ready to accept requests
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const ready = await checkEngineAlive();
+    if (ready) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 async function createWindow() {
@@ -93,12 +102,30 @@ ipcMain.handle('micelio:pick-directory', async () => {
 
 app.whenReady().then(createWindow);
 
-app.on('window-all-closed', () => {
-  if (pythonProcess) {
-    try {
-      pythonProcess.kill();
-    } catch (_) {}
+function stopPythonEngine() {
+  if (!pythonProcess || !pythonProcess.pid) {
+    return;
   }
+  const pid = pythonProcess.pid;
+  pythonProcess = null;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+    } else {
+      process.kill(pid, 'SIGTERM');
+    }
+  } catch (_) {}
+}
+
+app.on('before-quit', () => {
+  stopPythonEngine();
+});
+
+app.on('window-all-closed', () => {
+  stopPythonEngine();
   if (process.platform !== 'darwin') {
     app.quit();
   }

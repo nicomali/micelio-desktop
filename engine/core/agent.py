@@ -24,7 +24,13 @@ from engine.llm.base import ToolCallRequest
 from engine.llm.router import llm_router
 from engine.skills.loader import discover_skills, discover_workspace_playbooks
 from engine.tools.registry import execute_tool, get_builtin_tool_definitions
-from engine.tools.terminal import terminal_manager
+from engine.tools.terminal import (
+    has_shell_chaining,
+    is_destructive,
+    is_whitelisted,
+    requires_command_approval,
+    terminal_manager,
+)
 
 logger = logging.getLogger("micelio.core.agent")
 
@@ -43,11 +49,19 @@ class AgentOrchestrator:
         self._event_listeners: List[Callable[[Dict[str, Any]], Any]] = []
         self._pending_questions: Dict[str, asyncio.Future] = {}
         self._pending_approvals: Dict[str, asyncio.Future] = {}
+        self._conversation_locks: Dict[str, asyncio.Lock] = {}
 
         # Wire background wakeup handlers
         subagent_manager.set_runner_callback(self._run_subagent_background)
         scheduler_manager.set_wakeup_handler(self._on_scheduler_wakeup)
         terminal_manager.register_wakeup_callback(self._on_terminal_wakeup)
+
+    def _get_conversation_lock(self, conversation_id: str) -> asyncio.Lock:
+        lock = self._conversation_locks.get(conversation_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._conversation_locks[conversation_id] = lock
+        return lock
 
     def add_event_listener(self, cb: Callable[[Dict[str, Any]], Any]) -> None:
         self._event_listeners.append(cb)
@@ -79,6 +93,18 @@ class AgentOrchestrator:
             return True
         return False
 
+    def cancel_pending_futures(self) -> None:
+        """Cancel or resolve all pending question and HITL approval futures on client disconnect."""
+        for cid, fut in list(self._pending_questions.items()):
+            if fut and not fut.done():
+                fut.cancel()
+        self._pending_questions.clear()
+
+        for aid, fut in list(self._pending_approvals.items()):
+            if fut and not fut.done():
+                fut.cancel()
+        self._pending_approvals.clear()
+
     async def _wait_for_question(self, conversation_id: str, questions: List[Dict[str, Any]]) -> str:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
@@ -90,7 +116,12 @@ class AgentOrchestrator:
                 "questions": questions,
             }
         )
-        answers = await fut
+        try:
+            answers = await fut
+        except asyncio.CancelledError:
+            return "(User disconnected before answering questions)"
+        finally:
+            self._pending_questions.pop(conversation_id, None)
         lines = [f"- {k}: {v}" for k, v in (answers or {}).items()]
         return "\n".join(lines)
 
@@ -104,17 +135,18 @@ class AgentOrchestrator:
             return True
 
         cmd_line = str(tc.arguments.get("CommandLine", "")).strip()
-        for prefix in sec.auto_approved_command_prefixes:
-            if cmd_line.lower().startswith(prefix.lower()):
-                return True
 
-        is_destructive = any(
-            tok in cmd_line.lower()
-            for tok in ("rm -rf", "remove-item", "del /", "format ", "git push --force", "drop table")
-        )
-        if not sec.require_approval_for_commands and not (
-            sec.require_approval_for_destructive_commands and is_destructive
+        # 1. Always evaluate destructive patterns FIRST (cannot be bypassed by prefix whitelist)
+        cmd_is_destructive = is_destructive(cmd_line, require_approval_for_commands=False)
+        if cmd_is_destructive and (
+            sec.require_approval_for_destructive_commands or sec.require_approval_for_commands
         ):
+            pass  # Must request HITL approval below
+        elif not has_shell_chaining(cmd_line) and is_whitelisted(
+            cmd_line, sec.auto_approved_command_prefixes
+        ):
+            return True
+        elif not requires_command_approval(cmd_line):
             return True
 
         loop = asyncio.get_running_loop()
@@ -131,7 +163,12 @@ class AgentOrchestrator:
                 "summary": tc.arguments.get("toolSummary", "Execute command"),
             }
         )
-        return bool(await fut)
+        try:
+            return bool(await fut)
+        except asyncio.CancelledError:
+            return False
+        finally:
+            self._pending_approvals.pop(approval_id, None)
 
     async def handle_user_message(
         self,
@@ -140,39 +177,41 @@ class AgentOrchestrator:
         provider_override: Optional[str] = None,
         max_iterations: int = 15,
     ) -> None:
-        store = ConversationStore(conversation_id)
-        messages = store.load_messages()
+        lock = self._get_conversation_lock(conversation_id)
+        async with lock:
+            store = ConversationStore(conversation_id)
+            messages = store.load_messages()
 
-        # Check for `/compact` slash command
-        slash_hint = ""
-        first_token = user_text.strip().split()[0].lower() if user_text.strip() else ""
-        if first_token == "/compact":
-            if len(messages) > 4:
-                messages = messages[-4:]
-                store.save_messages(messages)
-            await self.broadcast(
-                {
-                    "type": "system_notice",
-                    "conversation_id": conversation_id,
-                    "message": "Contexto compactado (`/compact`). Se conservaron los turnos más recientes.",
-                }
+            # Check for `/compact` slash command
+            slash_hint = ""
+            first_token = user_text.strip().split()[0].lower() if user_text.strip() else ""
+            if first_token == "/compact":
+                if len(messages) > 4:
+                    messages = messages[-4:]
+                    store.save_messages(messages)
+                await self.broadcast(
+                    {
+                        "type": "system_notice",
+                        "conversation_id": conversation_id,
+                        "message": "Contexto compactado (`/compact`). Se conservaron los turnos más recientes.",
+                    }
+                )
+                if user_text.strip().lower() == "/compact":
+                    return
+            elif first_token in SLASH_COMMAND_HINTS:
+                slash_hint = SLASH_COMMAND_HINTS[first_token]
+
+            store.append_step(source="USER_EXPLICIT", step_type="USER_INPUT", content=user_text)
+            messages.append({"role": "user", "content": user_text})
+            store.save_messages(messages)
+
+            await self._run_agent_loop(
+                store=store,
+                messages=messages,
+                provider_override=provider_override,
+                slash_hint=slash_hint,
+                max_iterations=max_iterations,
             )
-            if user_text.strip().lower() == "/compact":
-                return
-        elif first_token in SLASH_COMMAND_HINTS:
-            slash_hint = SLASH_COMMAND_HINTS[first_token]
-
-        store.append_step(source="USER_EXPLICIT", step_type="USER_INPUT", content=user_text)
-        messages.append({"role": "user", "content": user_text})
-        store.save_messages(messages)
-
-        await self._run_agent_loop(
-            store=store,
-            messages=messages,
-            provider_override=provider_override,
-            slash_hint=slash_hint,
-            max_iterations=max_iterations,
-        )
 
     async def _run_agent_loop(
         self,

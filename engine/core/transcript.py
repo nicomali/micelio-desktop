@@ -12,6 +12,9 @@ Mirrors Antigravity's exact storage model:
 from __future__ import annotations
 
 import json
+import os
+import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,12 +22,38 @@ from typing import Any, Dict, List, Optional
 from engine.config import get_app_data_dir
 
 COMPACT_FIELD_MAX_CHARS = 2000
+_TRANSCRIPT_LOCK = threading.Lock()
+_SAFE_CONV_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def validate_conversation_id(conversation_id: str) -> Path:
+    """Validate that `conversation_id` matches `^[A-Za-z0-9_-]+$` and resolves inside `brain_root`."""
+    if not conversation_id or not _SAFE_CONV_ID_RE.match(conversation_id):
+        raise ValueError(f"Invalid conversation_id: {conversation_id!r}")
+    brain_root = (get_app_data_dir() / "brain").resolve()
+    brain_dir = (brain_root / conversation_id).resolve()
+    try:
+        brain_dir.relative_to(brain_root)
+    except ValueError as exc:
+        raise ValueError(f"Conversation path escapes brain directory: {conversation_id!r}") from exc
+    if brain_dir == brain_root:
+        raise ValueError(f"Conversation path cannot be brain root: {conversation_id!r}")
+    return brain_dir
+
+
+def _atomic_write_json(target_path: Path, data: Any) -> None:
+    """Write JSON atomically using a `.tmp` sibling file and `os.replace`."""
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(str(tmp_path), str(target_path))
 
 
 class ConversationStore:
     def __init__(self, conversation_id: str) -> None:
+        self._lock = _TRANSCRIPT_LOCK
         self.conversation_id = conversation_id
-        self.brain_dir: Path = get_app_data_dir() / "brain" / conversation_id
+        self.brain_dir: Path = validate_conversation_id(conversation_id)
         self.logs_dir: Path = self.brain_dir / ".system_generated" / "logs"
         self.scratch_dir: Path = self.brain_dir / "scratch"
         self.brain_dir.mkdir(parents=True, exist_ok=True)
@@ -47,10 +76,11 @@ class ConversationStore:
         return {}
 
     def save_session_meta(self, patch: Dict[str, Any]) -> Dict[str, Any]:
-        meta = self.get_session_meta()
-        meta.update(patch)
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        return meta
+        with self._lock:
+            meta = self.get_session_meta()
+            meta.update(patch)
+            _atomic_write_json(self.meta_path, meta)
+            return meta
 
     def _count_existing_steps(self) -> int:
         if not self.transcript_full_path.exists():
@@ -70,39 +100,40 @@ class ConversationStore:
         thinking: str = "",
         tool_calls: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        self._step_counter += 1
-        now_iso = datetime.now(timezone.utc).isoformat()
-        full_entry: Dict[str, Any] = {
-            "step_index": self._step_counter,
-            "source": source,
-            "type": step_type,
-            "status": status,
-            "created_at": now_iso,
-            "content": content,
-        }
-        if thinking:
-            full_entry["thinking"] = thinking
-        if tool_calls:
-            full_entry["tool_calls"] = tool_calls
+        with self._lock:
+            self._step_counter += 1
+            now_iso = datetime.now(timezone.utc).isoformat()
+            full_entry: Dict[str, Any] = {
+                "step_index": self._step_counter,
+                "source": source,
+                "type": step_type,
+                "status": status,
+                "created_at": now_iso,
+                "content": content,
+            }
+            if thinking:
+                full_entry["thinking"] = thinking
+            if tool_calls:
+                full_entry["tool_calls"] = tool_calls
 
-        with self.transcript_full_path.open("a", encoding="utf-8") as f_full:
-            f_full.write(json.dumps(full_entry, ensure_ascii=False) + "\n")
+            with self.transcript_full_path.open("a", encoding="utf-8") as f_full:
+                f_full.write(json.dumps(full_entry, ensure_ascii=False) + "\n")
 
-        compact_entry = dict(full_entry)
-        truncated_fields: List[str] = []
-        if len(content) > COMPACT_FIELD_MAX_CHARS:
-            compact_entry["content"] = content[:COMPACT_FIELD_MAX_CHARS] + "... [truncated]"
-            truncated_fields.append("content")
-        if thinking and len(thinking) > COMPACT_FIELD_MAX_CHARS:
-            compact_entry["thinking"] = thinking[:COMPACT_FIELD_MAX_CHARS] + "... [truncated]"
-            truncated_fields.append("thinking")
-        if truncated_fields:
-            compact_entry["truncated_fields"] = truncated_fields
+            compact_entry = dict(full_entry)
+            truncated_fields: List[str] = []
+            if len(content) > COMPACT_FIELD_MAX_CHARS:
+                compact_entry["content"] = content[:COMPACT_FIELD_MAX_CHARS] + "... [truncated]"
+                truncated_fields.append("content")
+            if thinking and len(thinking) > COMPACT_FIELD_MAX_CHARS:
+                compact_entry["thinking"] = thinking[:COMPACT_FIELD_MAX_CHARS] + "... [truncated]"
+                truncated_fields.append("thinking")
+            if truncated_fields:
+                compact_entry["truncated_fields"] = truncated_fields
 
-        with self.transcript_compact_path.open("a", encoding="utf-8") as f_comp:
-            f_comp.write(json.dumps(compact_entry, ensure_ascii=False) + "\n")
+            with self.transcript_compact_path.open("a", encoding="utf-8") as f_comp:
+                f_comp.write(json.dumps(compact_entry, ensure_ascii=False) + "\n")
 
-        return full_entry
+            return full_entry
 
     def load_messages(self) -> List[Dict[str, Any]]:
         if not self.messages_path.exists():
@@ -113,10 +144,8 @@ class ConversationStore:
             return []
 
     def save_messages(self, messages: List[Dict[str, Any]]) -> None:
-        self.messages_path.write_text(
-            json.dumps(messages, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with self._lock:
+            _atomic_write_json(self.messages_path, messages)
 
     def register_artifact(
         self,
@@ -125,28 +154,26 @@ class ConversationStore:
         user_facing: bool = True,
         request_feedback: bool = False,
     ) -> Dict[str, Any]:
-        meta_map: Dict[str, Any] = {}
-        if self.artifacts_meta_path.exists():
-            try:
-                meta_map = json.loads(self.artifacts_meta_path.read_text(encoding="utf-8"))
-            except Exception:
-                meta_map = {}
+        with self._lock:
+            meta_map: Dict[str, Any] = {}
+            if self.artifacts_meta_path.exists():
+                try:
+                    meta_map = json.loads(self.artifacts_meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    meta_map = {}
 
-        entry = {
-            "name": file_path.name,
-            "path": str(file_path.resolve()),
-            "summary": summary,
-            "user_facing": user_facing,
-            "request_feedback": request_feedback,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "status": "pending_review" if request_feedback else "active",
-        }
-        meta_map[file_path.name] = entry
-        self.artifacts_meta_path.write_text(
-            json.dumps(meta_map, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return entry
+            entry = {
+                "name": file_path.name,
+                "path": str(file_path.resolve()),
+                "summary": summary,
+                "user_facing": user_facing,
+                "request_feedback": request_feedback,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending_review" if request_feedback else "active",
+            }
+            meta_map[file_path.name] = entry
+            _atomic_write_json(self.artifacts_meta_path, meta_map)
+            return entry
 
     def list_artifacts(self) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
@@ -188,6 +215,8 @@ def list_all_conversations(project_path: Optional[str] = None) -> List[Dict[str,
 
     for d in sorted(brain_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if not d.is_dir():
+            continue
+        if d.name.startswith("sub_"):
             continue
         meta_file = d / "session_meta.json"
         meta: Dict[str, Any] = {}
@@ -233,7 +262,10 @@ def list_all_conversations(project_path: Optional[str] = None) -> List[Dict[str,
 def delete_conversation(conversation_id: str) -> bool:
     import shutil
 
-    brain_dir = get_app_data_dir() / "brain" / conversation_id
+    try:
+        brain_dir = validate_conversation_id(conversation_id)
+    except ValueError:
+        return False
     if not brain_dir.exists() or not brain_dir.is_dir():
         return False
     try:
@@ -241,3 +273,6 @@ def delete_conversation(conversation_id: str) -> bool:
         return True
     except Exception:
         return False
+
+
+TranscriptLogger = ConversationStore

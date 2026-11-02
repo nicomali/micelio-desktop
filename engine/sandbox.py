@@ -45,7 +45,7 @@ def _is_path_allowed(target) -> bool:
     try:
         p = Path(str(target)).resolve()
     except Exception:
-        return True
+        return False
     p_str = str(p).lower()
     # Allow null device
     if p_str in ("nul", "/dev/null", "\\\\?\\nul"):
@@ -57,30 +57,62 @@ def _is_path_allowed(target) -> bool:
     return False
 
 
+_WRITE_FLAGS = (
+     getattr(os, "O_WRONLY", 1)
+    | getattr(os, "O_RDWR", 2)
+    | getattr(os, "O_CREAT", 256)
+    | getattr(os, "O_TRUNC", 512)
+    | getattr(os, "O_APPEND", 8)
+)
+
+
 def _micelio_audit_hook(event: str, args: tuple) -> None:
     if not _ALLOWED_ROOTS:
         return
     if event == "open":
         path_arg = args[0] if len(args) > 0 else None
-        mode_arg = str(args[1]) if len(args) > 1 else "r"
+        mode_arg = args[1] if len(args) > 1 else "r"
+        flags_arg = args[2] if len(args) > 2 else 0
         if isinstance(path_arg, (str, bytes, os.PathLike)):
-            if any(m in mode_arg for m in ("w", "a", "x", "+")):
+            is_write_mode = isinstance(mode_arg, str) and any(
+                m in mode_arg for m in ("w", "a", "x", "+")
+            )
+            is_write_flags = isinstance(flags_arg, int) and bool(flags_arg & _WRITE_FLAGS)
+            if is_write_mode or is_write_flags:
                 if not _is_path_allowed(path_arg):
                     raise PermissionError(
                         f"[Micelio Sandbox] Write access denied outside active workspace: {path_arg}"
                     )
-    elif event in ("os.remove", "os.unlink", "os.rmdir", "os.mkdir"):
+    elif event == "os.open":
+        path_arg = args[0] if len(args) > 0 else None
+        flags_arg = args[1] if len(args) > 1 else 0
+        if isinstance(path_arg, (str, bytes, os.PathLike)):
+            if isinstance(flags_arg, int) and bool(flags_arg & _WRITE_FLAGS):
+                if not _is_path_allowed(path_arg):
+                    raise PermissionError(
+                        f"[Micelio Sandbox] os.open write denied outside active workspace: {path_arg}"
+                    )
+    elif event in ("os.remove", "os.unlink", "os.rmdir", "os.mkdir", "shutil.rmtree"):
         path_arg = args[0] if len(args) > 0 else None
         if isinstance(path_arg, (str, bytes, os.PathLike)) and not _is_path_allowed(path_arg):
             raise PermissionError(
                 f"[Micelio Sandbox] Modify/Delete access denied outside active workspace: {path_arg}"
             )
-    elif event in ("os.rename", "os.replace"):
+    elif event in (
+        "os.rename",
+        "os.replace",
+        "shutil.move",
+        "shutil.copyfile",
+        "shutil.copy",
+        "shutil.copy2",
+        "shutil.copytree",
+    ):
         src = args[0] if len(args) > 0 else None
         dst = args[1] if len(args) > 1 else None
-        if (src and not _is_path_allowed(src)) or (dst and not _is_path_allowed(dst)):
+        check_src = event in ("os.rename", "os.replace", "shutil.move")
+        if (check_src and src and not _is_path_allowed(src)) or (dst and not _is_path_allowed(dst)):
             raise PermissionError(
-                f"[Micelio Sandbox] Rename/Move denied outside active workspace: {src} -> {dst}"
+                f"[Micelio Sandbox] Rename/Move/Copy denied outside active workspace: {src} -> {dst}"
             )
 
 

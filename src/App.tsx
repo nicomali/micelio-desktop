@@ -114,6 +114,11 @@ export default function App() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const activeConvIdRef = useRef<string>('');
+
+  useEffect(() => {
+    activeConvIdRef.current = activeConvId;
+  }, [activeConvId]);
 
   useEffect(() => {
     void bootstrap();
@@ -245,12 +250,44 @@ export default function App() {
     };
 
     ws.onclose = () => {
+      setIsStreaming(false);
       setTimeout(connectWebSocket, 2000);
     };
   };
 
   const handleWsEvent = (ev: Record<string, any>) => {
-    switch (ev.type) {
+    const eventType = ev.type || ev.event;
+    const evConvId: string = ev.conversation_id || '';
+    const currentConvId = activeConvIdRef.current;
+
+    // Ignore internal subagent streaming/turn events or events from other conversations
+    const isSubagentEvent = evConvId.startsWith('sub_');
+    const isOtherConversation =
+      Boolean(evConvId) && Boolean(currentConvId) && evConvId !== currentConvId;
+
+    if (
+      (isSubagentEvent || isOtherConversation) &&
+      [
+        'turn_start',
+        'status',
+        'thinking',
+        'thinking_delta',
+        'text_delta',
+        'tool_call',
+        'tool_call_start',
+        'tool_result',
+        'tool_call_result',
+        'assistant_message',
+        'turn_complete',
+      ].includes(eventType)
+    ) {
+      if (eventType === 'turn_complete') {
+        void fetchRuntimeStatus();
+      }
+      return;
+    }
+
+    switch (eventType) {
       case 'turn_start':
         setIsStreaming(true);
         setStreamingThinking('');
@@ -315,13 +352,15 @@ export default function App() {
         }
         void fetchRuntimeStatus();
         break;
-      case 'error':
+      case 'error': {
         setIsStreaming(false);
+        const errMsg = ev.message || ev.error || 'Error inesperado en el motor.';
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: `> [!WARNING]\n> ${ev.message}` },
+          { role: 'assistant', content: `> [!WARNING]\n> ⚠️ Error: ${errMsg}` },
         ]);
         break;
+      }
       default:
         break;
     }

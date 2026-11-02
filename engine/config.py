@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from engine.credentials import WindowsCredentialVault
+
+_CONFIG_LOCK = threading.Lock()
 
 
 def get_app_data_dir() -> Path:
@@ -146,6 +149,7 @@ class ConfigManager:
     """Manages persistence of `MicelioConfig` and coordinates with `WindowsCredentialVault`."""
 
     def __init__(self) -> None:
+        self._lock = _CONFIG_LOCK
         self.data_dir = get_app_data_dir()
         self.config_path = self.data_dir / "config.json"
         self.config = self._load()
@@ -163,10 +167,12 @@ class ConfigManager:
         return default_cfg
 
     def _save_File(self, cfg: MicelioConfig) -> None:
-        self.config_path.write_text(
-            cfg.model_dump_json(indent=2),
-            encoding="utf-8",
-        )
+        with self._lock:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.config_path.with_suffix(".tmp")
+            payload = cfg.model_dump_json(indent=2)
+            tmp_path.write_text(payload, encoding="utf-8")
+            os.replace(str(tmp_path), str(self.config_path))
 
     def save(self) -> None:
         self._save_File(self.config)

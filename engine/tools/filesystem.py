@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from engine.config import config_manager
+from engine.config import config_manager, get_app_data_dir
 from engine.core.transcript import ConversationStore
 
 MAX_READ_LINES = 800
@@ -30,20 +30,25 @@ def resolve_path(raw_path: str, workspace_dir: Optional[str] = None) -> Path:
         # Also handle case where model put @ right before filename in an absolute path (e.g. C:/folder/@file.pptx)
         if p.name.startswith("@"):
             p = p.parent / p.name[1:]
-        return p
+        return p.resolve()
     base = Path(workspace_dir or config_manager.config.active_workspace)
     return (base / p).resolve()
 
 
-def is_path_within_sandbox(target_path: Path, store: ConversationStore) -> bool:
+def is_path_within_sandbox(target_path: Path, store: Optional[ConversationStore] = None) -> bool:
     """
-    Sandbox boundary check: write_file and edit_file are ONLY allowed inside:
+    Sandbox boundary check: filesystem tools are ONLY allowed inside:
     1. The active workspace directory (`config.active_workspace`)
-    2. The conversation's brain/scratch/artifacts directory (`~/.micelio/`)
+    2. The Micelio data/brain/scratch/artifacts directory (`~/.micelio/`)
     """
-    resolved = target_path.resolve()
+    try:
+        resolved = target_path.resolve()
+    except Exception:
+        return False
     workspace_root = Path(config_manager.config.active_workspace).resolve()
-    micelio_root = store.brain_dir.parent.parent.resolve()
+    micelio_root = (
+        store.brain_dir.parent.parent.resolve() if store is not None else get_app_data_dir().resolve()
+    )
     for allowed_root in (workspace_root, micelio_root):
         try:
             resolved.relative_to(allowed_root)
@@ -59,6 +64,11 @@ async def tool_read_file(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     path = resolve_path(args["Path"])
+    if not is_path_within_sandbox(path, store):
+        return (
+            f"Error: Sandbox violation — reading files outside the active workspace ({config_manager.config.active_workspace}) "
+            f"or scratch directory ({store.scratch_dir}) is blocked for security: {path}"
+        )
     if not path.exists():
         return f"Error: File not found: {path}"
     if path.is_dir():
@@ -77,8 +87,12 @@ async def tool_read_file(
     selected = lines[start_line - 1 : end_line]
     numbered = [f"{idx}: {line}" for idx, line in enumerate(selected, start=start_line)]
     output = "\n".join(numbered)
-    if len(output.encode("utf-8")) > MAX_READ_BYTES:
-        output = output[:MAX_READ_BYTES] + "\n... [truncated at 46080 bytes]"
+    encoded = output.encode("utf-8")
+    if len(encoded) > MAX_READ_BYTES:
+        output = (
+            encoded[:MAX_READ_BYTES].decode("utf-8", errors="ignore")
+            + "\n... [truncated at 46080 bytes]"
+        )
 
     header = f"File: {path} (Showing lines {start_line}-{end_line} of {total_lines})\n"
     return header + output
@@ -208,6 +222,11 @@ async def tool_find_by_name(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     search_dir = resolve_path(args.get("SearchDirectory") or config_manager.config.active_workspace)
+    if not is_path_within_sandbox(search_dir, store):
+        return (
+            f"Error: Sandbox violation — searching outside the active workspace ({config_manager.config.active_workspace}) "
+            f"is blocked for security: {search_dir}"
+        )
     pattern = args.get("Pattern", "*")
     extensions = [e.lstrip(".").lower() for e in (args.get("Extensions") or [])]
     max_depth = int(args.get("MaxDepth") or 8)
@@ -249,6 +268,11 @@ async def tool_grep_search(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     search_path = resolve_path(args.get("SearchPath") or config_manager.config.active_workspace)
+    if not is_path_within_sandbox(search_path, store):
+        return (
+            f"Error: Sandbox violation — searching outside the active workspace ({config_manager.config.active_workspace}) "
+            f"is blocked for security: {search_path}"
+        )
     query: str = args.get("Query", "")
     is_regex: bool = bool(args.get("IsRegex", False))
     case_insensitive: bool = bool(args.get("CaseInsensitive", False))
