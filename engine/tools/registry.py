@@ -266,6 +266,8 @@ async def execute_tool(
             tool_summary=args.get("toolSummary", "Run command"),
             wait_ms_before_async=int(args.get("WaitMsBeforeAsync", 5000)),
             is_daemon=bool(args.get("IsDaemon", False)),
+            conversation_id=store.conversation_id,
+            scratch_dir=str(store.scratch_dir),
         )
     elif name == "manage_task":
         return await terminal_manager.manage_task(

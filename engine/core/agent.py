@@ -425,6 +425,22 @@ class AgentOrchestrator:
 
     async def _on_terminal_wakeup(self, payload: Dict[str, Any]) -> None:
         await self.broadcast(payload)
+        # If the task had transitioned to background (went_async=True) and is not an infinite daemon,
+        # automatically wake up the parent agent conversation so the user never has to ask "que paso?"
+        conv_id = payload.get("conversation_id")
+        if conv_id and payload.get("went_async") and not payload.get("is_daemon"):
+            wakeup_msg = (
+                f"[REACTIVE WAKEUP — Background Task `{payload['task_id']}` ({payload.get('tool_summary')}) finished "
+                f"with status={payload.get('status')} (exit_code={payload.get('exit_code')})]\n"
+                f"Command: `{payload.get('command_line')}`\n"
+                f"Output:\n{payload.get('recent_output') or '(No output)'}"
+            )
+            asyncio.create_task(
+                self.handle_user_message(
+                    conversation_id=conv_id,
+                    user_text=wakeup_msg,
+                )
+            )
 
 
 orchestrator = AgentOrchestrator()

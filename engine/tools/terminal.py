@@ -24,6 +24,7 @@ from engine.config import config_manager
 @dataclass
 class BackgroundTask:
     task_id: str
+    conversation_id: str
     command_line: str
     tool_summary: str
     is_daemon: bool
@@ -32,6 +33,7 @@ class BackgroundTask:
     status: str = "running"  # "running" | "completed" | "failed" | "killed"
     exit_code: Optional[int] = None
     output_lines: List[str] = field(default_factory=list)
+    went_async: bool = False
 
 
 class TerminalTaskManager:
@@ -58,18 +60,38 @@ class TerminalTaskManager:
         wait_ms_before_async: int = 5000,
         is_daemon: bool = False,
         cwd: Optional[str] = None,
+        conversation_id: str = "",
+        scratch_dir: Optional[str] = None,
     ) -> str:
+        config_manager.config = config_manager._load()
         work_dir = cwd or config_manager.config.active_workspace
         wait_sec = max(0.5, min(10.0, (wait_ms_before_async or 5000) / 1000.0))
 
+        # Force UTF-8 encoding in PowerShell & Python so scripts with accents/emojis never fail on Windows
         if sys.platform == "win32":
-            cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command_line]
+            utf8_prelude = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            cmd = [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                utf8_prelude + command_line,
+            ]
         else:
             cmd = ["/bin/sh", "-c", command_line]
+
+        import os
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+        if scratch_dir:
+            env["MICELIO_SCRATCH_DIR"] = scratch_dir
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=work_dir,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             stdin=asyncio.subprocess.PIPE,
@@ -78,6 +100,7 @@ class TerminalTaskManager:
         task_id = f"task_{uuid.uuid4().hex[:8]}"
         bg_task = BackgroundTask(
             task_id=task_id,
+            conversation_id=conversation_id,
             command_line=command_line,
             tool_summary=tool_summary,
             is_daemon=is_daemon,
@@ -89,6 +112,7 @@ class TerminalTaskManager:
         reader_future = asyncio.create_task(self._collect_output(bg_task))
 
         if is_daemon:
+            bg_task.went_async = True
             await asyncio.sleep(min(wait_sec, 1.0))
             recent = "".join(bg_task.output_lines[-30:])
             return (
@@ -104,11 +128,13 @@ class TerminalTaskManager:
                 f"Command output:\n{out_text or '(No output)'}"
             )
         except asyncio.TimeoutError:
+            bg_task.went_async = True
             recent = "".join(bg_task.output_lines[-25:])
             return (
                 f"Command did not finish within {int(wait_sec * 1000)}ms and is continuing in the "
                 f"background with TaskId: `{task_id}`.\n"
-                f"The system will notify you when it finishes. Recent output:\n{recent}"
+                f"The system will automatically wake you up when `{task_id}` finishes — STOP calling tools now and end your turn to wait for the notification.\n"
+                f"Recent output:\n{recent}"
             )
 
     async def _collect_output(self, bg_task: BackgroundTask) -> None:
@@ -132,6 +158,10 @@ class TerminalTaskManager:
             {
                 "type": "background_task_completed",
                 "task_id": bg_task.task_id,
+                "conversation_id": bg_task.conversation_id,
+                "went_async": bg_task.went_async,
+                "is_daemon": bg_task.is_daemon,
+                "command_line": bg_task.command_line,
                 "tool_summary": bg_task.tool_summary,
                 "status": bg_task.status,
                 "exit_code": bg_task.exit_code,

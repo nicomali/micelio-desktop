@@ -28,6 +28,24 @@ def resolve_path(raw_path: str, workspace_dir: Optional[str] = None) -> Path:
     return (base / p).resolve()
 
 
+def is_path_within_sandbox(target_path: Path, store: ConversationStore) -> bool:
+    """
+    Sandbox boundary check: write_file and edit_file are ONLY allowed inside:
+    1. The active workspace directory (`config.active_workspace`)
+    2. The conversation's brain/scratch/artifacts directory (`~/.micelio/`)
+    """
+    resolved = target_path.resolve()
+    workspace_root = Path(config_manager.config.active_workspace).resolve()
+    micelio_root = store.brain_dir.parent.parent.resolve()
+    for allowed_root in (workspace_root, micelio_root):
+        try:
+            resolved.relative_to(allowed_root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 async def tool_read_file(
     args: Dict[str, Any],
     store: ConversationStore,
@@ -65,6 +83,11 @@ async def tool_write_file(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     path = resolve_path(args["Path"])
+    if not is_path_within_sandbox(path, store):
+        return (
+            f"Error: Sandbox violation — writing outside the active workspace ({config_manager.config.active_workspace}) "
+            f"or scratch directory ({store.scratch_dir}) is blocked for security: {path}"
+        )
     content: str = args.get("Content", "")
     overwrite: bool = bool(args.get("Overwrite", False))
     append: bool = bool(args.get("Append", False))
@@ -122,6 +145,11 @@ async def tool_edit_file(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     path = resolve_path(args["Path"])
+    if not is_path_within_sandbox(path, store):
+        return (
+            f"Error: Sandbox violation — editing files outside the active workspace ({config_manager.config.active_workspace}) "
+            f"is blocked for security: {path}"
+        )
     target: str = args.get("Target", "")
     replacement: str = args.get("Replacement", "")
     artifact_meta: Optional[Dict[str, Any]] = args.get("ArtifactMetadata")
