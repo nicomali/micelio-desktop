@@ -199,3 +199,37 @@ html.light .bg-\[\#EC0000\] {
 html.light .bg-\[\#EC0000\] span {
   color: #FFFFFF !important;
 }
+
+/* HITL Approval Card in Light Mode */
+html.light .hitl-banner {
+  background-color: #FFFBEB !important;
+  border-color: #F59E0B !important;
+  box-shadow: 0 8px 24px -4px rgba(245, 158, 11, 0.12) !important;
+}
+
+html.light .hitl-title {
+  color: #B45309 !important;
+}
+
+html.light .hitl-command-box {
+  background-color: #FFFFFF !important;
+  border-color: #FDE68A !important;
+  color: #0F172A !important;
+}
+
+html.light .hitl-reject-btn {
+  background-color: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #334155 !important;
+}
+
+html.light .hitl-reject-btn:hover {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .bg-zinc-800,
+html.light .bg-zinc-900,
+html.light .bg-black\/50 {
+  background-color: #F1F5F9 !important;
+  color: #334155 !important;
+}

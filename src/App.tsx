@@ -1114,26 +1114,26 @@ export default function App() {
 
               {/* HITL Command Approval Banner */}
               {pendingApproval && (
-                <div className="rounded-2xl border border-amber-500/30 bg-[#14120E] p-4 space-y-3">
+                <div className="rounded-2xl border border-amber-500/30 bg-[#14120E] p-4 space-y-3 hitl-banner shadow-lg">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-amber-300 font-medium text-xs">
-                      <ShieldAlert className="w-4 h-4" />
+                    <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs hitl-title">
+                      <ShieldAlert className="w-4 h-4 shrink-0" />
                       <span>Confirmar ejecución: {pendingApproval.summary}</span>
                     </div>
                   </div>
-                  <pre className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] text-xs font-mono text-zinc-200 overflow-x-auto">
+                  <pre className="p-3 rounded-xl bg-black/50 border border-white/[0.08] text-xs font-mono text-zinc-100 overflow-x-auto hitl-command-box">
                     {pendingApproval.command_line}
                   </pre>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <button
                       onClick={() => handleResolveApproval(true)}
-                      className="px-3.5 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 text-xs font-medium transition"
+                      className="px-4 py-1.5 rounded-lg bg-[#EC0000] hover:bg-[#D00000] text-white text-xs font-medium shadow-sm transition"
                     >
                       Permitir comando
                     </button>
                     <button
                       onClick={() => handleResolveApproval(false)}
-                      className="px-3.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 text-xs transition"
+                      className="px-3.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-zinc-300 text-xs font-medium transition hitl-reject-btn"
                     >
                       Rechazar
                     </button>

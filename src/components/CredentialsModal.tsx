@@ -212,7 +212,7 @@ export const CredentialsModal: React.FC<Props> = ({
                     <button
                       disabled={busy}
                       onClick={() => handleLink(cred.key)}
-                      className="px-3 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 text-xs font-medium transition"
+                      className="px-3 py-1.5 rounded-lg bg-[#EC0000] hover:bg-[#D00000] text-white text-xs font-medium transition"
                     >
                       Vincular
                     </button>
