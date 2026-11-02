@@ -42,13 +42,19 @@ async function ensurePythonEngine() {
 async function createWindow() {
   await ensurePythonEngine();
 
+  const iconPath =
+    process.platform === 'win32'
+      ? path.join(__dirname, '..', 'public', 'icon.ico')
+      : path.join(__dirname, '..', 'public', 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1520,
     height: 940,
     minWidth: 1100,
     minHeight: 700,
-    backgroundColor: '#0B0E14',
-    title: 'Micelio Desktop — Santander Agentic Harness',
+    backgroundColor: '#09090B',
+    title: 'Micelio — Santander Engineering Harness',
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

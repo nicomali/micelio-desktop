@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#1C191E" />
+      <stop offset="100%" stop-color="#09090B" />
+    </radialGradient>
+    <linearGradient id="redAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF3B3B" />
+      <stop offset="100%" stop-color="#EC0000" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded Squircle Background -->
+  <rect x="12" y="12" width="232" height="232" rx="56" fill="url(#bgGlow)" stroke="#27272A" stroke-width="6"/>
+
+  <!-- Mycelium / Agentic Network Connections -->
+  <g stroke="url(#redAccent)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 196 V120" />
+    <path d="M128 120 L74 78" />
+    <path d="M128 120 L182 78" />
+    <path d="M128 148 L70 144" />
+    <path d="M128 148 L186 144" />
+    <path d="M74 78 L128 56 L182 78" stroke-opacity="0.45" stroke-width="6" />
+  </g>
+
+  <!-- Nodes -->
+  <circle cx="128" cy="120" r="18" fill="url(#redAccent)" />
+  <circle cx="128" cy="120" r="7" fill="#FFFFFF" />
+
+  <circle cx="74" cy="78" r="14" fill="url(#redAccent)" />
+  <circle cx="182" cy="78" r="14" fill="url(#redAccent)" />
+  <circle cx="128" cy="56" r="11" fill="#FF5555" />
+
+  <circle cx="70" cy="144" r="11" fill="#EC0000" />
+  <circle cx="186" cy="144" r="11" fill="#EC0000" />
+  <circle cx="128" cy="196" r="13" fill="#FFFFFF" />
+</svg>

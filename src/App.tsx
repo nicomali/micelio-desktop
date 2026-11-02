@@ -387,7 +387,7 @@ export default function App() {
           <div className="h-3.5 w-[1px] bg-white/[0.08] mx-0.5" />
 
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#EC0000]" />
+            <img src="./icon.svg" alt="Micelio" className="w-4 h-4 rounded-sm" />
             <span className="font-semibold text-xs tracking-tight text-white">Micelio</span>
             <span className="text-[11px] text-zinc-500 font-medium">Santander</span>
           </div>
