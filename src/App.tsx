@@ -1520,7 +1520,11 @@ Explica el objetivo operativo o de negocio de esta habilidad.
                         <div className="text-xs font-mono font-medium text-white flex items-center gap-2">
                           <span>{newSkillMode ? 'Nueva Skill (SKILL.md)' : previewFile.name}</span>
                           {fileSaveStatus && (
-                            <span className="text-[10px] font-sans text-emerald-400">
+                            <span
+                              className={`text-[10px] font-sans ${
+                                fileSaveStatus.includes('✓') ? 'text-emerald-400' : 'text-red-400'
+                              }`}
+                            >
                               {fileSaveStatus}
                             </span>
                           )}
