@@ -426,6 +426,36 @@ async def browse_filesystem(path: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+@app.post("/api/workspace/create-folder")
+async def create_project_folder(payload: Dict[str, str]) -> Dict[str, Any]:
+    """Create a new operational project directory inside the selected parent folder."""
+    import re as _re
+
+    parent_raw = str(payload.get("parent_path", "")).strip()
+    folder_name = str(payload.get("folder_name", "")).strip()
+    if not folder_name:
+        return {"ok": False, "error": "Debes ingresar un nombre para la carpeta del proyecto."}
+
+    safe_name = _re.sub(r'[<>:"/\\|?*]', "-", folder_name).strip(". ")
+    if not safe_name:
+        return {"ok": False, "error": "Nombre de carpeta inválido."}
+
+    parent_dir = Path(parent_raw).resolve() if parent_raw else Path.home()
+    if not parent_dir.exists() or not parent_dir.is_dir():
+        return {"ok": False, "error": f"No existe la carpeta base: {parent_dir}"}
+
+    new_dir = (parent_dir / safe_name).resolve()
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+        return {
+            "ok": True,
+            "name": safe_name,
+            "path": str(new_dir).replace("\\", "/"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @app.get("/api/runtime-status")
 async def get_runtime_status() -> Dict[str, Any]:
     return {

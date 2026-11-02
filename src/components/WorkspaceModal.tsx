@@ -42,6 +42,8 @@ export const WorkspaceModal: React.FC<Props> = ({
   const [quickRoots, setQuickRoots] = useState<Array<{ label: string; path: string }>>([]);
   const [manualPath, setManualPath] = useState(currentWorkspace);
   const [projectName, setProjectName] = useState('');
+  const [newFolderName, setNewFolderName] = useState('');
+  const [createError, setCreateError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -49,9 +51,36 @@ export const WorkspaceModal: React.FC<Props> = ({
       setManualPath(currentWorkspace);
       const defaultName = currentWorkspace.split(/[\\/]/).filter(Boolean).pop() || 'Proyecto';
       setProjectName(defaultName);
+      setNewFolderName('');
+      setCreateError('');
       void loadDir(currentWorkspace);
     }
   }, [isOpen, currentWorkspace]);
+
+  const handleCreateNewProjectFolder = async () => {
+    if (!newFolderName.trim()) return;
+    setCreateError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${engineHttp}/api/workspace/create-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parent_path: currentDir || currentWorkspace,
+          folder_name: newFolderName.trim(),
+        }),
+      }).then((r) => r.json());
+      if (res.ok && res.path) {
+        await onSelectWorkspace(res.path, res.name || newFolderName.trim());
+        setNewFolderName('');
+        onClose();
+      } else {
+        setCreateError(res.error || 'No se pudo crear la carpeta del proyecto.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadDir = async (dirPath?: string) => {
     setLoading(true);
@@ -110,53 +139,109 @@ export const WorkspaceModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Saved Projects List */}
-        {savedProjects.length > 0 && (
-          <div className="px-5 py-3 border-b border-white/[0.06] bg-white/[0.01] space-y-2">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-              <Bookmark className="w-3 h-3 text-[#EC0000]" />
-              <span>Tus Proyectos Guardados</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
-              {savedProjects.map((proj) => {
-                const isCurrent =
-                  proj.path.replace(/\\/g, '/').toLowerCase() ===
-                  currentWorkspace.replace(/\\/g, '/').toLowerCase();
-                return (
-                  <div
-                    key={proj.path}
-                    className={`flex items-center justify-between px-3 py-1.5 rounded-xl border text-xs transition ${
-                      isCurrent
-                        ? 'border-[#EC0000]/50 bg-[#EC0000]/10 text-white'
-                        : 'border-white/[0.06] bg-[#0B0B0D] text-zinc-300 hover:border-white/[0.15]'
-                    }`}
-                  >
-                    <button
-                      onClick={async () => {
-                        await onSelectWorkspace(proj.path, proj.name);
-                        onClose();
-                      }}
-                      className="flex-1 text-left truncate"
-                      title={proj.path}
+        {/* Saved Projects List (Always shown, includes current project if not yet saved) */}
+        {(() => {
+          const normCurrent = currentWorkspace.replace(/\\/g, '/').toLowerCase();
+          const hasCurrent = savedProjects.some(
+            (p) => p.path.replace(/\\/g, '/').toLowerCase() === normCurrent
+          );
+          const allProjects: SavedProject[] = hasCurrent
+            ? savedProjects
+            : [
+                {
+                  name: currentWorkspace.split(/[\\/]/).filter(Boolean).pop() || 'Proyecto Actual',
+                  path: currentWorkspace,
+                },
+                ...savedProjects,
+              ];
+
+          return (
+            <div className="px-5 py-3 border-b border-white/[0.06] bg-white/[0.01] space-y-2">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Bookmark className="w-3 h-3 text-[#EC0000]" />
+                  <span>Tus Proyectos ({allProjects.length})</span>
+                </span>
+                <span className="text-[10px] text-zinc-500 normal-case">
+                  Clic para abrir · Icono papelera para quitar de la lista
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-32 overflow-y-auto">
+                {allProjects.map((proj) => {
+                  const isCurrent =
+                    proj.path.replace(/\\/g, '/').toLowerCase() === normCurrent;
+                  return (
+                    <div
+                      key={proj.path}
+                      className={`flex items-center justify-between px-3 py-1.5 rounded-xl border text-xs transition ${
+                        isCurrent
+                          ? 'border-[#EC0000]/50 bg-[#EC0000]/10 text-white'
+                          : 'border-white/[0.06] bg-[#0B0B0D] text-zinc-300 hover:border-white/[0.15]'
+                      }`}
                     >
-                      <div className="font-medium truncate">{proj.name}</div>
-                      <div className="text-[10px] font-mono text-zinc-500 truncate">
-                        {proj.path}
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => onRemoveSavedProject(proj.path)}
-                      className="p-1 rounded hover:bg-red-500/15 text-zinc-500 hover:text-red-400 transition ml-2"
-                      title="Quitar de proyectos guardados"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
+                      <button
+                        onClick={async () => {
+                          await onSelectWorkspace(proj.path, proj.name);
+                          onClose();
+                        }}
+                        className="flex-1 text-left truncate"
+                        title={proj.path}
+                      >
+                        <div className="font-medium truncate flex items-center gap-1.5">
+                          <span>{proj.name}</span>
+                          {isCurrent && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#EC0000] text-white">
+                              Activo
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-500 truncate">
+                          {proj.path}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => onRemoveSavedProject(proj.path)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/15 text-zinc-400 hover:text-red-400 transition ml-2 shrink-0"
+                        title="Eliminar / Quitar proyecto de tu lista"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+          );
+        })()}
+
+        {/* Create Brand New Project Folder */}
+        <div className="px-5 py-2.5 border-b border-white/[0.06] bg-white/[0.02] space-y-1.5">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            Crear Nuevo Proyecto en <span className="font-mono text-zinc-300 normal-case">{currentDir}</span>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void handleCreateNewProjectFolder();
+                }
+              }}
+              placeholder="Ej: Conciliación Tarjetas Octubre..."
+              className="flex-1 px-3 py-1.5 rounded-lg bg-[#0B0B0D] border border-white/[0.08] text-xs text-white focus:outline-none focus:border-[#EC0000]"
+            />
+            <button
+              onClick={handleCreateNewProjectFolder}
+              disabled={!newFolderName.trim() || loading}
+              className="px-3.5 py-1.5 rounded-lg bg-[#EC0000] hover:bg-[#D00000] disabled:opacity-40 text-white text-xs font-medium transition shrink-0"
+            >
+              + Crear y Abrir Proyecto
+            </button>
+          </div>
+          {createError && <div className="text-[11px] text-red-400">{createError}</div>}
+        </div>
 
         {/* Quick Roots + Native Button */}
         <div className="px-5 py-2.5 border-b border-white/[0.05] flex items-center justify-between gap-2 overflow-x-auto">

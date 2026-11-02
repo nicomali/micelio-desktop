@@ -584,9 +584,21 @@ Explica el objetivo operativo o de negocio de esta habilidad.
 
   const handleRemoveSavedProject = async (pathToRemove: string) => {
     const existingProjects: Array<{ name: string; path: string }> = config?.saved_projects || [];
+    const normRemove = pathToRemove.replace(/\\/g, '/').toLowerCase();
+    const normCurrent = workspacePath.replace(/\\/g, '/').toLowerCase();
     const updatedProjects = existingProjects.filter(
-      (p) => p.path.replace(/\\/g, '/').toLowerCase() !== pathToRemove.replace(/\\/g, '/').toLowerCase()
+      (p) => p.path.replace(/\\/g, '/').toLowerCase() !== normRemove
     );
+    if (normRemove === normCurrent && updatedProjects.length > 0) {
+      await handleSelectWorkspace(updatedProjects[0].path, updatedProjects[0].name);
+      const updated = await fetch(`${ENGINE_HTTP}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saved_projects: updatedProjects }),
+      }).then((r) => r.json());
+      setConfig(updated);
+      return;
+    }
     const updated = await fetch(`${ENGINE_HTTP}/api/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -776,6 +788,78 @@ Explica el objetivo operativo o de negocio de esta habilidad.
             </div>
 
             <div className="flex-1 overflow-y-auto px-2 py-1 space-y-5">
+              {/* Saved Operational Projects with Create & Delete */}
+              {(() => {
+                const rawSaved: Array<{ name: string; path: string }> =
+                  config?.saved_projects || [];
+                const normCurrent = workspacePath.replace(/\\/g, '/').toLowerCase();
+                const hasCurrent = rawSaved.some(
+                  (p) => p.path.replace(/\\/g, '/').toLowerCase() === normCurrent
+                );
+                const sidebarProjects =
+                  workspacePath && !hasCurrent
+                    ? [{ name: workspaceFolderName, path: workspacePath }, ...rawSaved]
+                    : rawSaved;
+
+                return (
+                  <div>
+                    <div className="px-2 mb-1.5 flex items-center justify-between">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                        Proyectos ({sidebarProjects.length})
+                      </span>
+                      <button
+                        onClick={() => setWorkspaceModalOpen(true)}
+                        className="px-1.5 py-0.5 rounded bg-white/[0.05] hover:bg-[#EC0000] text-zinc-400 hover:text-white text-[10px] font-medium transition flex items-center gap-0.5"
+                        title="Crear o agregar un Proyecto Operativo"
+                      >
+                        <Plus className="w-2.5 h-2.5" />
+                        <span>Nuevo</span>
+                      </button>
+                    </div>
+                    <div className="space-y-0.5">
+                      {sidebarProjects.map((proj) => {
+                        const isCurrent =
+                          proj.path.replace(/\\/g, '/').toLowerCase() === normCurrent;
+                        return (
+                          <div
+                            key={proj.path}
+                            onClick={() => handleSelectWorkspace(proj.path, proj.name)}
+                            className={`group w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between cursor-pointer ${
+                              isCurrent
+                                ? 'bg-[#EC0000]/10 border border-[#EC0000]/30 text-white font-medium'
+                                : 'text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200 border border-transparent'
+                            }`}
+                            title={proj.path}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-1">
+                              <FolderOpen
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  isCurrent ? 'text-[#EC0000]' : 'text-zinc-500'
+                                }`}
+                              />
+                              <span className="truncate">{proj.name}</span>
+                            </div>
+
+                            {sidebarProjects.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleRemoveSavedProject(proj.path);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-400 hover:text-red-400 shrink-0 transition"
+                                title="Quitar proyecto de la lista"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Project Sessions with Rename & Delete */}
               <div>
                 <div className="px-2 mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
