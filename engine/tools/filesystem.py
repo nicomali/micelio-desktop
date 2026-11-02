@@ -35,11 +35,16 @@ def resolve_path(raw_path: str, workspace_dir: Optional[str] = None) -> Path:
     return (base / p).resolve()
 
 
-def is_path_within_sandbox(target_path: Path, store: Optional[ConversationStore] = None) -> bool:
+def is_path_within_sandbox(
+    target_path: Path,
+    store: Optional[ConversationStore] = None,
+    allow_builtin_skills: bool = False,
+) -> bool:
     """
     Sandbox boundary check: filesystem tools are ONLY allowed inside:
     1. The active workspace directory (`config.active_workspace`)
     2. The Micelio data/brain/scratch/artifacts directory (`~/.micelio/`)
+    3. Built-in `skills/` directory (when `allow_builtin_skills=True`)
     """
     try:
         resolved = target_path.resolve()
@@ -49,7 +54,12 @@ def is_path_within_sandbox(target_path: Path, store: Optional[ConversationStore]
     micelio_root = (
         store.brain_dir.parent.parent.resolve() if store is not None else get_app_data_dir().resolve()
     )
-    for allowed_root in (workspace_root, micelio_root):
+    allowed_roots = [workspace_root, micelio_root]
+    if allow_builtin_skills:
+        builtin_skills_root = (Path(__file__).resolve().parent.parent.parent / "skills").resolve()
+        allowed_roots.append(builtin_skills_root)
+
+    for allowed_root in allowed_roots:
         try:
             resolved.relative_to(allowed_root)
             return True
@@ -64,7 +74,7 @@ async def tool_read_file(
     on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
 ) -> str:
     path = resolve_path(args["Path"])
-    if not is_path_within_sandbox(path, store):
+    if not is_path_within_sandbox(path, store, allow_builtin_skills=True):
         return (
             f"Error: Sandbox violation — reading files outside the active workspace ({config_manager.config.active_workspace}) "
             f"or scratch directory ({store.scratch_dir}) is blocked for security: {path}"

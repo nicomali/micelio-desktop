@@ -329,10 +329,10 @@ async def open_workspace_file_external(payload: Dict[str, str]) -> Dict[str, Any
 
 @app.get("/api/workspace/file")
 async def read_workspace_file(path: str) -> Dict[str, Any]:
-    """Read a file from the active workspace so the user can preview it in the right drawer."""
+    """Read a file from the active workspace or built-in skills so the user can preview/edit it in the right drawer."""
     config_manager.config = config_manager._load()
     target = resolve_path(path)
-    if not is_path_within_sandbox(target):
+    if not is_path_within_sandbox(target, allow_builtin_skills=True):
         return {
             "error": f"Acceso bloqueado por seguridad: '{target}' está fuera del workspace activo.",
             "content": "",
@@ -348,6 +348,39 @@ async def read_workspace_file(path: str) -> Dict[str, Any]:
         "name": target.name,
         "path": str(target).replace("\\", "/"),
         "content": content[:60000],
+    }
+
+
+@app.post("/api/skills/save")
+async def save_skill_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Create or update a SKILL.md file (in builtin, global ~/.micelio/skills, or active project)."""
+    import re as _re
+
+    config_manager.config = config_manager._load()
+    raw_path = str(payload.get("path", "")).strip()
+    name = _re.sub(r"[^a-zA-Z0-9_-]", "-", str(payload.get("name", "")).strip().lower()).strip("-")
+    scope = str(payload.get("scope", "global")).strip().lower()
+    content = str(payload.get("content", ""))
+
+    if raw_path:
+        target = Path(raw_path).resolve()
+        if not is_path_within_sandbox(target, allow_builtin_skills=True) or target.name.upper() != "SKILL.MD":
+            return {"ok": False, "error": "Ruta de skill inválida o fuera de los directorios permitidos."}
+    else:
+        if not name:
+            return {"ok": False, "error": "Debes indicar un nombre para la skill."}
+        if scope == "project":
+            base_dir = Path(config_manager.config.active_workspace).resolve() / ".micelio" / "skills" / name
+        else:
+            base_dir = get_app_data_dir().resolve() / "skills" / name
+        target = base_dir / "SKILL.md"
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return {
+        "ok": True,
+        "path": str(target).replace("\\", "/"),
+        "skills": discover_skills(),
     }
 
 

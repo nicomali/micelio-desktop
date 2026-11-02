@@ -44,18 +44,24 @@ def parse_skill_frontmatter(skill_md_path: Path) -> Dict[str, str]:
 
 def discover_skills() -> List[Dict[str, str]]:
     config_manager.config = config_manager._load()
-    roots: List[Path] = [
-        Path(__file__).resolve().parent.parent.parent / "skills",
-        get_app_data_dir() / "skills",
-        Path(config_manager.config.active_workspace) / ".micelio" / "skills",
-        Path(config_manager.config.active_workspace) / "skills",
+    builtin_root = Path(__file__).resolve().parent.parent.parent / "skills"
+    global_root = get_app_data_dir() / "skills"
+    ws_dot_root = Path(config_manager.config.active_workspace) / ".micelio" / "skills"
+    ws_root = Path(config_manager.config.active_workspace) / "skills"
+
+    roots_with_scope: List[tuple[Path, str]] = [
+        (builtin_root, "builtin"),
+        (global_root, "global"),
+        (ws_dot_root, "project"),
+        (ws_root, "project"),
     ]
     seen: Dict[str, Dict[str, str]] = {}
-    for root in roots:
+    for root, scope in roots_with_scope:
         if not root.exists():
             continue
         for skill_md in root.glob("*/SKILL.md"):
             info = parse_skill_frontmatter(skill_md)
+            info["scope"] = scope
             seen[info["name"]] = info
     return list(seen.values())
 

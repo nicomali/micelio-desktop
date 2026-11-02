@@ -111,6 +111,12 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [editingConvId, setEditingConvId] = useState<string | null>(null);
   const [editingConvTitle, setEditingConvTitle] = useState<string>('');
+  const [isEditingFile, setIsEditingFile] = useState(false);
+  const [editedFileContent, setEditedFileContent] = useState('');
+  const [newSkillMode, setNewSkillMode] = useState(false);
+  const [newSkillName, setNewSkillName] = useState('');
+  const [newSkillScope, setNewSkillScope] = useState<'global' | 'project'>('global');
+  const [fileSaveStatus, setFileSaveStatus] = useState<string>('');
 
   const wsRef = useRef<WebSocket | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -228,10 +234,82 @@ export default function App() {
           path: res.path,
           content: res.content || '',
         });
+        setEditedFileContent(res.content || '');
+        setIsEditingFile(false);
+        setNewSkillMode(false);
+        setFileSaveStatus('');
         setRightTab('file');
         setRightDrawerOpen(true);
       }
     } catch (_) {}
+  };
+
+  const handleStartNewSkill = () => {
+    const template = `---
+name: mi-nueva-skill
+description: Describe aquí cuándo el agente debe activar esta skill y qué procedimiento estandariza.
+---
+
+# Nombre de la Skill Operativa
+
+## Objetivo
+Explica el objetivo operativo o de negocio de esta habilidad.
+
+## Instrucciones Paso a Paso
+1. Paso 1...
+2. Paso 2...
+`;
+    setNewSkillMode(true);
+    setNewSkillName('mi-nueva-skill');
+    setNewSkillScope('global');
+    setPreviewFile({
+      name: 'SKILL.md',
+      path: '',
+      content: template,
+    });
+    setEditedFileContent(template);
+    setIsEditingFile(true);
+    setFileSaveStatus('');
+    setRightTab('file');
+    setRightDrawerOpen(true);
+  };
+
+  const handleSaveSkillOrFile = async () => {
+    if (!previewFile) return;
+    setFileSaveStatus('Guardando...');
+    try {
+      const payload = newSkillMode
+        ? {
+            name: newSkillName,
+            scope: newSkillScope,
+            content: editedFileContent,
+          }
+        : {
+            path: previewFile.path,
+            content: editedFileContent,
+          };
+      const res = await fetch(`${ENGINE_HTTP}/api/skills/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then((r) => r.json());
+      if (res.ok) {
+        setPreviewFile({
+          name: 'SKILL.md',
+          path: res.path,
+          content: editedFileContent,
+        });
+        setNewSkillMode(false);
+        setIsEditingFile(false);
+        setFileSaveStatus('Guardado ✓');
+        await fetchRuntimeStatus();
+        setTimeout(() => setFileSaveStatus(''), 2500);
+      } else {
+        setFileSaveStatus(res.error || 'Error al guardar');
+      }
+    } catch (_) {
+      setFileSaveStatus('Error de red al guardar');
+    }
   };
 
   const fetchCredentials = async () => {
@@ -814,6 +892,41 @@ export default function App() {
                 </div>
               )}
 
+              {/* Agent Skills Section (View, Edit & Create SKILL.md) */}
+              <div>
+                <div className="px-2 mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    Skills del Agente ({runtimeStatus.skills.length})
+                  </span>
+                  <button
+                    onClick={handleStartNewSkill}
+                    className="px-1.5 py-0.5 rounded bg-white/[0.05] hover:bg-[#EC0000] text-zinc-400 hover:text-white text-[10px] font-medium transition flex items-center gap-0.5"
+                    title="Crear nueva Skill (Global o del Proyecto)"
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                    <span>Nueva</span>
+                  </button>
+                </div>
+                <div className="space-y-0.5">
+                  {runtimeStatus.skills.map((sk: any) => (
+                    <div
+                      key={sk.name}
+                      onClick={() => handleOpenFilePreview(sk.path)}
+                      className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/[0.05] text-xs text-zinc-300 hover:text-white cursor-pointer transition"
+                      title={`${sk.description}\n(${sk.path}) — Clic para ver o editar SKILL.md`}
+                    >
+                      <div className="flex items-center gap-2 truncate pr-1">
+                        <Sparkles className="w-3 h-3 shrink-0 text-[#EC0000]" />
+                        <span className="truncate font-mono text-[11px]">{sk.name}</span>
+                      </div>
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/[0.05] text-zinc-500 group-hover:text-zinc-300 shrink-0">
+                        {sk.scope === 'project' ? 'proy' : sk.scope === 'global' ? 'global' : 'base'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Workspace Files Explorer */}
               <div>
                 <div className="px-2 mb-1.5 flex items-center justify-between">
@@ -1296,31 +1409,98 @@ export default function App() {
               <div className="flex-1 flex flex-col overflow-hidden">
                 {previewFile ? (
                   <>
-                    <div className="px-4 py-2.5 border-b border-white/[0.06] bg-[#0F0F13] flex items-center justify-between">
-                      <div className="truncate">
-                        <div className="text-xs font-mono font-medium text-white">
-                          {previewFile.name}
+                    <div className="px-4 py-2.5 border-b border-white/[0.06] bg-[#0F0F13] flex items-center justify-between gap-2">
+                      <div className="truncate flex-1">
+                        <div className="text-xs font-mono font-medium text-white flex items-center gap-2">
+                          <span>{newSkillMode ? 'Nueva Skill (SKILL.md)' : previewFile.name}</span>
+                          {fileSaveStatus && (
+                            <span className="text-[10px] font-sans text-emerald-400">
+                              {fileSaveStatus}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] font-mono text-zinc-500 truncate">
-                          {previewFile.path}
+                          {newSkillMode
+                            ? newSkillScope === 'project'
+                              ? `${workspacePath}/.micelio/skills/${newSkillName}/SKILL.md`
+                              : `~/.micelio/skills/${newSkillName}/SKILL.md`
+                            : previewFile.path}
                         </div>
                       </div>
-                      <button
-                        onClick={() =>
-                          setInput((prev) => `${prev} @${previewFile.name} `.trimStart())
-                        }
-                        className="px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-zinc-200 font-mono shrink-0 transition"
-                      >
-                        @ Mencionar
-                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {previewFile.name.toUpperCase() === 'SKILL.MD' && (
+                          <>
+                            {isEditingFile ? (
+                              <button
+                                onClick={handleSaveSkillOrFile}
+                                className="px-2.5 py-1 rounded-md bg-[#EC0000] hover:bg-[#D00000] text-white text-[11px] font-medium transition"
+                              >
+                                Guardar Skill
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEditedFileContent(previewFile.content);
+                                  setIsEditingFile(true);
+                                }}
+                                className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-zinc-200 font-medium transition flex items-center gap-1"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>Editar</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {!newSkillMode && (
+                          <button
+                            onClick={() =>
+                              setInput((prev) => `${prev} @${previewFile.name} `.trimStart())
+                            }
+                            className="px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-zinc-200 font-mono shrink-0 transition"
+                          >
+                            @ Mencionar
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-zinc-200 leading-relaxed bg-[#09090B]">
-                      <code>{previewFile.content}</code>
-                    </pre>
+
+                    {newSkillMode && (
+                      <div className="px-4 py-2.5 border-b border-white/[0.06] bg-[#111115] flex items-center gap-2 text-xs">
+                        <input
+                          type="text"
+                          value={newSkillName}
+                          onChange={(e) => setNewSkillName(e.target.value)}
+                          placeholder="nombre-de-la-skill"
+                          className="flex-1 px-2.5 py-1 rounded-lg bg-[#09090B] border border-white/[0.08] text-xs font-mono text-white focus:outline-none"
+                        />
+                        <select
+                          value={newSkillScope}
+                          onChange={(e) => setNewSkillScope(e.target.value as 'global' | 'project')}
+                          className="px-2 py-1 rounded-lg bg-[#09090B] border border-white/[0.08] text-xs text-zinc-200 focus:outline-none"
+                        >
+                          <option value="global">Global (Todos los proyectos)</option>
+                          <option value="project">Solo este Proyecto</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {isEditingFile ? (
+                      <textarea
+                        value={editedFileContent}
+                        onChange={(e) => setEditedFileContent(e.target.value)}
+                        className="flex-1 w-full p-4 text-xs font-mono text-zinc-100 leading-relaxed bg-[#09090B] focus:outline-none resize-none"
+                        spellCheck={false}
+                      />
+                    ) : (
+                      <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-zinc-200 leading-relaxed bg-[#09090B]">
+                        <code>{previewFile.content}</code>
+                      </pre>
+                    )}
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-zinc-500">
-                    Selecciona un archivo de texto, CSV o Playbook en la barra izquierda para previsualizarlo aquí. Los archivos Excel y PowerPoint se abren directamente en su aplicación de Office al hacerles clic.
+                    Selecciona una Skill, un archivo de texto, CSV o Playbook en la barra izquierda para previsualizarlo o editarlo aquí. Los archivos Excel y PowerPoint se abren directamente en su aplicación de Office al hacerles clic.
                   </div>
                 )}
               </div>
