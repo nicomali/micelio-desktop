@@ -830,8 +830,8 @@ export default function App() {
 
         {/* Center Stage: Clean Antigravity/Cursor Conversation View */}
         <main className="flex-1 flex flex-col bg-[#09090B] overflow-hidden select-text">
-          <div className="flex-1 overflow-y-auto px-6 py-8 select-text">
-            <div className="max-w-3xl mx-auto space-y-6">
+          <div className="flex-1 overflow-y-auto px-6 pb-8 select-text">
+            <div className="max-w-3xl mx-auto">
               {/* Empty State — Clean, Centered, Operations-Focused */}
               {messages.length === 0 && !isStreaming && (
                 <div className="pt-14 pb-6 space-y-8 animate-fade-up">
@@ -891,154 +891,181 @@ export default function App() {
                 </div>
               )}
 
-              {/* Conversation Messages */}
-              {messages.map((msg, idx) => {
-                if (msg.role === 'tool') return null;
-                const isUser = msg.role === 'user';
-
-                if (isUser) {
-                  const rawContent = msg.content || '';
-                  if (
-                    rawContent.startsWith('[REACTIVE WAKEUP') ||
-                    rawContent.startsWith('[SCHEDULED TRIGGER')
-                  ) {
-                    return (
-                      <div key={idx} className="flex justify-start animate-fade-up">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          <span>Reactive Wakeup: tarea en segundo plano completada</span>
-                        </div>
-                      </div>
-                    );
+              {/* Conversation Turns (Each turn scopes its own sticky User Prompt) */}
+              {(() => {
+                const turnGroups: Array<{ userContent: string | null; steps: Message[] }> = [];
+                for (const msg of messages) {
+                  if (msg.role === 'tool') continue;
+                  const raw = msg.content || '';
+                  const isWakeup =
+                    msg.role === 'user' &&
+                    (raw.startsWith('[REACTIVE WAKEUP') || raw.startsWith('[SCHEDULED TRIGGER'));
+                  if (msg.role === 'user' && !isWakeup) {
+                    turnGroups.push({ userContent: raw, steps: [] });
+                  } else {
+                    if (turnGroups.length === 0) {
+                      turnGroups.push({ userContent: null, steps: [msg] });
+                    } else {
+                      turnGroups[turnGroups.length - 1].steps.push(msg);
+                    }
                   }
-                  return (
-                    <div
-                      key={idx}
-                      className="sticky top-0 z-20 -mx-2 px-2 py-2.5 backdrop-blur-md sticky-user-header flex justify-end animate-fade-up rounded-b-xl"
-                    >
-                      <div className="max-w-2xl rounded-2xl bg-[#18181C] border border-white/[0.08] px-4 py-2.5 text-[13.5px] text-zinc-100 shadow-sm">
-                        <RichMarkdown content={rawContent} />
-                      </div>
-                    </div>
-                  );
                 }
 
-                return (
-                  <div key={idx} className="space-y-2.5 animate-fade-up">
-                    {/* Compact Thinking Pill */}
-                    {msg.thinking && (
-                      <details className="group">
-                        <summary className="list-none inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] text-zinc-400 cursor-pointer transition">
-                          <Brain className="w-3 h-3 text-zinc-400" />
-                          <span>Razonamiento del agente</span>
-                          <ChevronRight className="w-3 h-3 text-zinc-500 group-open:rotate-90 transition-transform" />
-                        </summary>
-                        <pre className="mt-2 p-3 rounded-xl bg-[#0D0D10] border border-white/[0.05] text-[11px] font-mono text-zinc-400 whitespace-pre-wrap leading-relaxed">
-                          {msg.thinking}
-                        </pre>
-                      </details>
-                    )}
+                return turnGroups.map((turn, turnIdx) => {
+                  const isLastTurn = turnIdx === turnGroups.length - 1;
+                  return (
+                    <section key={turnIdx} className="relative pb-6">
+                      {turn.userContent !== null && (
+                        <div className="sticky top-0 z-20 -mx-6 px-6 pt-3 pb-3 sticky-turn-wrapper">
+                          <div className="w-full rounded-xl border px-4 py-2.5 text-[13.5px] text-zinc-100 user-prompt-card max-h-28 overflow-y-auto">
+                            <RichMarkdown content={turn.userContent} />
+                          </div>
+                        </div>
+                      )}
 
-                    {/* Compact Tool Call Pills (Antigravity Style) */}
-                    {msg.tool_calls && msg.tool_calls.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {msg.tool_calls.map((tc) => {
-                          const filePath = tc.arguments?.Path ? String(tc.arguments.Path) : null;
+                      <div className="space-y-4 pt-2">
+                        {turn.steps.map((msg, stepIdx) => {
+                          const rawContent = msg.content || '';
+                          if (msg.role === 'user') {
+                            return (
+                              <div key={stepIdx} className="flex justify-start">
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  <span>Reactive Wakeup: tarea en segundo plano completada</span>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           return (
-                            <div
-                              key={tc.id}
-                              onClick={() => {
-                                if (filePath) {
-                                  void handleOpenFilePreview(filePath);
-                                }
-                              }}
-                              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#111115] border border-white/[0.06] text-[11px] font-mono text-zinc-300 ${
-                                filePath ? 'cursor-pointer hover:border-[#EC0000]/50 hover:bg-white/[0.04] transition' : ''
-                              }`}
-                              title={filePath ? `Clic para abrir ${filePath} en el visor` : undefined}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              <span className="text-zinc-200 font-medium">{tc.name}</span>
-                              {filePath && (
-                                <span className="text-zinc-400 underline decoration-zinc-700 truncate max-w-[220px]">
-                                  {filePath.split(/[\\/]/).pop()}
-                                </span>
+                            <div key={stepIdx} className="space-y-2.5">
+                              {/* Compact Thinking Pill */}
+                              {msg.thinking && (
+                                <details className="group">
+                                  <summary className="list-none inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] text-zinc-400 cursor-pointer transition">
+                                    <Brain className="w-3 h-3 text-zinc-400" />
+                                    <span>Razonamiento del agente</span>
+                                    <ChevronRight className="w-3 h-3 text-zinc-500 group-open:rotate-90 transition-transform" />
+                                  </summary>
+                                  <pre className="mt-2 p-3 rounded-xl bg-[#0D0D10] border border-white/[0.05] text-[11px] font-mono text-zinc-400 whitespace-pre-wrap leading-relaxed">
+                                    {msg.thinking}
+                                  </pre>
+                                </details>
                               )}
-                              {tc.arguments?.CommandLine && (
-                                <span className="text-zinc-500 truncate max-w-[220px]">
-                                  {tc.arguments.CommandLine}
-                                </span>
+
+                              {/* Compact Tool Call Pills (Antigravity Style) */}
+                              {msg.tool_calls && msg.tool_calls.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {msg.tool_calls.map((tc) => {
+                                    const filePath = tc.arguments?.Path
+                                      ? String(tc.arguments.Path)
+                                      : null;
+                                    return (
+                                      <div
+                                        key={tc.id}
+                                        onClick={() => {
+                                          if (filePath) {
+                                            void handleOpenFilePreview(filePath);
+                                          }
+                                        }}
+                                        className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#111115] border border-white/[0.06] text-[11px] font-mono text-zinc-300 ${
+                                          filePath
+                                            ? 'cursor-pointer hover:border-[#EC0000]/50 hover:bg-white/[0.04] transition'
+                                            : ''
+                                        }`}
+                                        title={
+                                          filePath
+                                            ? `Clic para abrir ${filePath} en el visor`
+                                            : undefined
+                                        }
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                        <span className="text-zinc-200 font-medium">{tc.name}</span>
+                                        {filePath && (
+                                          <span className="text-zinc-400 underline decoration-zinc-700 truncate max-w-[220px]">
+                                            {filePath.split(/[\\/]/).pop()}
+                                          </span>
+                                        )}
+                                        {tc.arguments?.CommandLine && (
+                                          <span className="text-zinc-500 truncate max-w-[220px]">
+                                            {tc.arguments.CommandLine}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Assistant Response */}
+                              {msg.content && (
+                                <div className="pl-0.5">
+                                  <RichMarkdown content={msg.content} />
+                                </div>
                               )}
                             </div>
                           );
                         })}
-                      </div>
-                    )}
 
-                    {/* Assistant Response */}
-                    {msg.content && (
-                      <div className="pl-0.5">
-                        <RichMarkdown content={msg.content} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                        {/* Active Streaming Turn inside the latest TurnGroup */}
+                        {isLastTurn && isStreaming && (
+                          <div className="space-y-3 pt-1">
+                            {streamingThinking && (
+                              <div className="rounded-xl bg-[#0D0D10] border border-white/[0.06] p-3">
+                                <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mb-1">
+                                  <Brain className="w-3 h-3 text-[#EC0000] animate-pulse" />
+                                  <span>Pensando...</span>
+                                </div>
+                                <pre className="text-[11px] font-mono text-zinc-400 whitespace-pre-wrap">
+                                  {streamingThinking}
+                                </pre>
+                              </div>
+                            )}
 
-              {/* Active Streaming Turn */}
-              {isStreaming && (
-                <div className="space-y-3 pt-1">
-                  {streamingThinking && (
-                    <div className="rounded-xl bg-[#0D0D10] border border-white/[0.06] p-3">
-                      <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mb-1">
-                        <Brain className="w-3 h-3 text-[#EC0000] animate-pulse" />
-                        <span>Pensando...</span>
-                      </div>
-                      <pre className="text-[11px] font-mono text-zinc-400 whitespace-pre-wrap">
-                        {streamingThinking}
-                      </pre>
-                    </div>
-                  )}
+                            {streamingToolCalls.length > 0 && (
+                              <div className="space-y-1.5">
+                                {streamingToolCalls.map((tc) => (
+                                  <details
+                                    key={tc.id}
+                                    className="rounded-xl bg-[#111115] border border-white/[0.06] px-3 py-2 text-xs font-mono"
+                                  >
+                                    <summary className="cursor-pointer flex items-center justify-between text-[11px]">
+                                      <span className="flex items-center gap-2 text-zinc-200">
+                                        <Terminal className="w-3.5 h-3.5 text-[#EC0000]" />
+                                        <span>{tc.name}</span>
+                                      </span>
+                                      <span className="text-zinc-500">
+                                        {tc.output ? 'Completado' : 'Ejecutando...'}
+                                      </span>
+                                    </summary>
+                                    {tc.output && (
+                                      <pre className="mt-2 pt-2 border-t border-white/[0.05] text-[11px] text-zinc-400 max-h-40 overflow-y-auto whitespace-pre-wrap">
+                                        {tc.output}
+                                      </pre>
+                                    )}
+                                  </details>
+                                ))}
+                              </div>
+                            )}
 
-                  {streamingToolCalls.length > 0 && (
-                    <div className="space-y-1.5">
-                      {streamingToolCalls.map((tc) => (
-                        <details
-                          key={tc.id}
-                          className="rounded-xl bg-[#111115] border border-white/[0.06] px-3 py-2 text-xs font-mono"
-                        >
-                          <summary className="cursor-pointer flex items-center justify-between text-[11px]">
-                            <span className="flex items-center gap-2 text-zinc-200">
-                              <Terminal className="w-3.5 h-3.5 text-[#EC0000]" />
-                              <span>{tc.name}</span>
-                            </span>
-                            <span className="text-zinc-500">
-                              {tc.output ? 'Completado' : 'Ejecutando...'}
-                            </span>
-                          </summary>
-                          {tc.output && (
-                            <pre className="mt-2 pt-2 border-t border-white/[0.05] text-[11px] text-zinc-400 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                              {tc.output}
-                            </pre>
-                          )}
-                        </details>
-                      ))}
-                    </div>
-                  )}
-
-                  {streamingText ? (
-                    <RichMarkdown content={streamingText} />
-                  ) : (
-                    !streamingThinking &&
-                    streamingToolCalls.length === 0 && (
-                      <div className="flex items-center gap-2 text-xs text-zinc-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#EC0000] animate-ping" />
-                        <span>Generando respuesta...</span>
+                            {streamingText ? (
+                              <RichMarkdown content={streamingText} />
+                            ) : (
+                              !streamingThinking &&
+                              streamingToolCalls.length === 0 && (
+                                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#EC0000] animate-ping" />
+                                  <span>Generando respuesta...</span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )
-                  )}
-                </div>
-              )}
+                    </section>
+                  );
+                });
+              })()}
 
               {/* Interactive `ask_question` Card */}
               {pendingQuestions && (

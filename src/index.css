@@ -121,14 +121,24 @@ html.light .bg-\[\#18181C\] {
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
-html.light .sticky-user-header {
-  background: rgba(248, 250, 252, 0.9) !important;
-  border-bottom: 1px solid #E2E8F0 !important;
+html.light .sticky-turn-wrapper {
+  background: linear-gradient(to bottom, #F8FAFC 88%, rgba(248, 250, 252, 0)) !important;
 }
 
-html.dark .sticky-user-header {
-  background: rgba(9, 9, 11, 0.88) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+html.dark .sticky-turn-wrapper {
+  background: linear-gradient(to bottom, #09090B 88%, rgba(9, 9, 11, 0)) !important;
+}
+
+html.light .user-prompt-card {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06) !important;
+}
+
+html.dark .user-prompt-card {
+  background-color: #141418 !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
 html.light .composer-Dock {

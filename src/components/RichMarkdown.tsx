@@ -120,37 +120,45 @@ export const RichMarkdown: React.FC<Props> = ({ content }) => {
                   <span>{style.label}</span>
                 </div>
                 <div className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                  {alertLines.join('\n')}
+                  {renderInlineFormatting(alertLines.join('\n'))}
                 </div>
               </div>
             );
             continue;
           }
 
-          if (line.startsWith('# ')) {
-            elements.push(
-              <h1
-                key={`h1-${idx}-${i}`}
-                className="text-base font-semibold text-white tracking-tight mt-5 mb-2 pb-1.5 border-b border-white/[0.07]"
-              >
-                {line.slice(2)}
-              </h1>
-            );
-          } else if (line.startsWith('## ')) {
-            elements.push(
-              <h2
-                key={`h2-${idx}-${i}`}
-                className="text-sm font-semibold text-zinc-100 tracking-tight mt-4 mb-1.5"
-              >
-                {line.slice(3)}
-              </h2>
-            );
-          } else if (line.startsWith('### ')) {
-            elements.push(
-              <h3 key={`h3-${idx}-${i}`} className="text-[13px] font-semibold text-zinc-200 mt-3 mb-1">
-                {line.slice(4)}
-              </h3>
-            );
+          const headingMatch = line.match(/^(#{1,4})\s+(.*)/);
+          if (headingMatch) {
+            const level = headingMatch[1].length;
+            const headingText = headingMatch[2];
+            if (level === 1) {
+              elements.push(
+                <h1
+                  key={`h1-${idx}-${i}`}
+                  className="text-base font-semibold text-white tracking-tight mt-5 mb-2 pb-1.5 border-b border-white/[0.07]"
+                >
+                  {renderInlineFormatting(headingText)}
+                </h1>
+              );
+            } else if (level === 2) {
+              elements.push(
+                <h2
+                  key={`h2-${idx}-${i}`}
+                  className="text-sm font-semibold text-zinc-100 tracking-tight mt-4 mb-1.5"
+                >
+                  {renderInlineFormatting(headingText)}
+                </h2>
+              );
+            } else {
+              elements.push(
+                <h3
+                  key={`h3-${idx}-${i}`}
+                  className="text-[13px] font-semibold text-zinc-200 mt-3 mb-1"
+                >
+                  {renderInlineFormatting(headingText)}
+                </h3>
+              );
+            }
           } else if (line.match(/^\s*-\s+\[(x| )\]\s+/i)) {
             const checked = line.toLowerCase().includes('[x]');
             const label = line.replace(/^\s*-\s+\[(x| )\]\s+/i, '');
