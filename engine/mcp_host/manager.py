@@ -120,16 +120,58 @@ class GitHubMCPConnector:
             ),
             ToolDefinition(
                 name="github_get_file_contents",
-                description="[MCP GitHub] Get the contents of a file from a remote GitHub repository.",
+                description="[MCP GitHub Knowledge Base] Read the contents of a document, playbook, or file from a GitHub repository.",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "owner": {"type": "string"},
-                        "repo": {"type": "string"},
-                        "path": {"type": "string"},
+                        "owner": {"type": "string", "description": "Repository owner (optional if default_owner is configured)"},
+                        "repo": {"type": "string", "description": "Repository name (optional if default_repo is configured)"},
+                        "path": {"type": "string", "description": "Path to file in the repository (e.g. 'playbooks/cierre.md')"},
                         "ref": {"type": "string", "description": "Branch or commit SHA"},
                     },
-                    "required": ["owner", "repo", "path"],
+                    "required": ["path"],
+                },
+            ),
+            ToolDefinition(
+                name="github_list_directory",
+                description="[MCP GitHub Knowledge Base] List all folders and documents inside a directory of a GitHub repository (useful to browse a remote Knowledge Base).",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string", "description": "Repository owner (optional if default_owner is configured)"},
+                        "repo": {"type": "string", "description": "Repository name (optional if default_repo is configured)"},
+                        "path": {"type": "string", "description": "Directory path (leave empty '' for root directory)"},
+                        "ref": {"type": "string", "description": "Branch name (optional)"},
+                    },
+                },
+            ),
+            ToolDefinition(
+                name="github_search_knowledge",
+                description="[MCP GitHub Knowledge Base] Search inside markdown documents, playbooks, SQL queries, or rules across a GitHub repository or organization.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Keywords to search (e.g. 'conciliacion tarjetas SLA')"},
+                        "owner": {"type": "string", "description": "Optional owner/org filter"},
+                        "repo": {"type": "string", "description": "Optional repository name filter"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            ToolDefinition(
+                name="github_save_knowledge_doc",
+                description="[MCP GitHub Knowledge Base] Create or update a documentation file, SOP, or playbook directly in a GitHub repository.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Target path in repo (e.g. 'docs/procedimiento_pagos.md')"},
+                        "content": {"type": "string", "description": "Full markdown or text content to save"},
+                        "commit_message": {"type": "string", "description": "Description of the update"},
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "branch": {"type": "string", "description": "Branch name (default: main)"},
+                    },
+                    "required": ["path", "content", "commit_message"],
                 },
             ),
         ]
@@ -242,8 +284,8 @@ class GitHubMCPConnector:
                 return f"Created Issue #{data['number']}: {data['html_url']}"
 
             elif name == "github_get_file_contents":
-                owner = args["owner"]
-                repo = args["repo"]
+                owner = args.get("owner") or config_manager.config.github.default_owner
+                repo = args.get("repo") or config_manager.config.github.default_repo
                 path = args["path"].lstrip("/")
                 params = {"ref": args["ref"]} if args.get("ref") else {}
                 r = await client.get(
@@ -256,7 +298,99 @@ class GitHubMCPConnector:
                 if isinstance(data, dict) and data.get("encoding") == "base64":
                     decoded = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
                     return decoded
-                return json.dumps(data, indent=2)
+                return json.dumps(data, indent=2, ensure_ascii=False)
+
+            elif name == "github_list_directory":
+                owner = args.get("owner") or config_manager.config.github.default_owner
+                repo = args.get("repo") or config_manager.config.github.default_repo
+                path = (args.get("path") or "").strip().lstrip("/")
+                params = {"ref": args["ref"]} if args.get("ref") else {}
+                r = await client.get(
+                    f"{base}/repos/{owner}/{repo}/contents/{path}",
+                    params=params,
+                    headers=headers,
+                )
+                r.raise_for_status()
+                data = r.json()
+                if isinstance(data, list):
+                    return json.dumps(
+                        [
+                            {
+                                "name": item.get("name"),
+                                "path": item.get("path"),
+                                "type": item.get("type"),  # "file" or "dir"
+                                "size": item.get("size"),
+                            }
+                            for item in data
+                        ],
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                return json.dumps(data, indent=2, ensure_ascii=False)
+
+            elif name == "github_search_knowledge":
+                owner = args.get("owner") or config_manager.config.github.default_owner
+                repo = args.get("repo") or config_manager.config.github.default_repo
+                q = args["query"]
+                if owner and repo:
+                    q = f"{q} repo:{owner}/{repo}"
+                elif owner:
+                    q = f"{q} org:{owner}"
+                r = await client.get(
+                    f"{base}/search/code",
+                    params={"q": q, "per_page": 15},
+                    headers=headers,
+                )
+                r.raise_for_status()
+                items = r.json().get("items", [])
+                return json.dumps(
+                    [
+                        {
+                            "name": it.get("name"),
+                            "path": it.get("path"),
+                            "repository": (it.get("repository") or {}).get("full_name"),
+                            "html_url": it.get("html_url"),
+                        }
+                        for it in items
+                    ],
+                    indent=2,
+                    ensure_ascii=False,
+                )
+
+            elif name == "github_save_knowledge_doc":
+                owner = args.get("owner") or config_manager.config.github.default_owner
+                repo = args.get("repo") or config_manager.config.github.default_repo
+                path = args["path"].lstrip("/")
+                branch = args.get("branch", "main")
+                content_b64 = base64.b64encode(args["content"].encode("utf-8")).decode("ascii")
+
+                # Check if file already exists to include its `sha` for update
+                existing_sha: Optional[str] = None
+                chk = await client.get(
+                    f"{base}/repos/{owner}/{repo}/contents/{path}",
+                    params={"ref": branch},
+                    headers=headers,
+                )
+                if chk.status_code == 200 and isinstance(chk.json(), dict):
+                    existing_sha = chk.json().get("sha")
+
+                put_payload: Dict[str, Any] = {
+                    "message": args["commit_message"],
+                    "content": content_b64,
+                    "branch": branch,
+                }
+                if existing_sha:
+                    put_payload["sha"] = existing_sha
+
+                r = await client.put(
+                    f"{base}/repos/{owner}/{repo}/contents/{path}",
+                    json=put_payload,
+                    headers=headers,
+                )
+                r.raise_for_status()
+                res_data = r.json()
+                doc_url = (res_data.get("content") or {}).get("html_url", f"{owner}/{repo}/{path}")
+                return f"Knowledge document saved in GitHub ({'updated' if existing_sha else 'created'}): {doc_url}"
 
         return f"Unknown GitHub tool: {name}"
 
