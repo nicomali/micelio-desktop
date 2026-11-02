@@ -198,23 +198,27 @@ export const RichMarkdown: React.FC<Props> = ({ content }) => {
 };
 
 function renderInlineFormatting(text: string): React.ReactNode {
-  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g);
-  return tokens.map((tok, i) => {
-    if (tok.startsWith('`') && tok.endsWith('`')) {
+  // Match bold (**...**), inline code (`...`), or markdown links ([...](...)) cleanly
+  const regex = /(\*\*[^*]+?\*\*|`[^`]+?`|\[[^\]]+?\]\([^)]+?\))/g;
+  const parts = text.split(regex);
+
+  return parts.map((tok, i) => {
+    if (!tok) return null;
+    if (tok.startsWith('**') && tok.endsWith('**') && tok.length > 4) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {renderInlineFormatting(tok.slice(2, -2))}
+        </strong>
+      );
+    }
+    if (tok.startsWith('`') && tok.endsWith('`') && tok.length > 2) {
       return (
         <code
           key={i}
-          className="px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.06] text-zinc-200 font-mono text-[12px]"
+          className="px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.08] text-zinc-200 font-mono text-[12px]"
         >
           {tok.slice(1, -1)}
         </code>
-      );
-    }
-    if (tok.startsWith('**') && tok.endsWith('**')) {
-      return (
-        <strong key={i} className="font-semibold text-white">
-          {tok.slice(2, -2)}
-        </strong>
       );
     }
     const linkMatch = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
