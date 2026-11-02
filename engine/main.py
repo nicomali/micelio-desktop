@@ -28,7 +28,11 @@ from engine.config import config_manager
 from engine.core.agent import orchestrator
 from engine.core.scheduler import scheduler_manager
 from engine.core.subagents import subagent_manager
-from engine.core.transcript import ConversationStore, list_all_conversations
+from engine.core.transcript import (
+    ConversationStore,
+    delete_conversation,
+    list_all_conversations,
+)
 from engine.mcp_host.manager import mcp_host
 from engine.skills.loader import discover_skills, discover_workspace_playbooks
 from engine.tools.filesystem import IGNORE_DIRS
@@ -144,16 +148,42 @@ async def delete_credential_from_wincred(key: str) -> Dict[str, Any]:
 # Conversations, Artifacts, Workspace, MCPs, Skills, Tasks
 # ---------------------------------------------------------------------------
 @app.get("/api/conversations")
-async def get_conversations() -> Dict[str, Any]:
-    return {"conversations": list_all_conversations()}
+async def get_conversations(project_path: Optional[str] = None) -> Dict[str, Any]:
+    return {"conversations": list_all_conversations(project_path=project_path)}
 
 
 @app.post("/api/conversations/new")
-async def create_conversation() -> Dict[str, Any]:
+async def create_conversation(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    config_manager.config = config_manager._load()
     cid = str(uuid.uuid4())
     store = ConversationStore(cid)
     store.save_messages([])
+    proj = (payload or {}).get("project_path") or config_manager.config.active_workspace
+    title = (payload or {}).get("title") or "Nueva sesión"
+    store.save_session_meta(
+        {
+            "project_path": str(Path(proj).resolve()).replace("\\", "/"),
+            "custom_title": title if title != "Nueva sesión" else "",
+        }
+    )
     return {"conversation_id": cid, "artifact_dir": str(store.brain_dir)}
+
+
+@app.patch("/api/conversations/{conversation_id}")
+async def rename_conversation_endpoint(
+    conversation_id: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    store = ConversationStore(conversation_id)
+    new_title = str(payload.get("title", "")).strip()
+    meta = store.save_session_meta({"custom_title": new_title})
+    return {"ok": True, "conversation_id": conversation_id, "meta": meta}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation_endpoint(conversation_id: str) -> Dict[str, Any]:
+    ok = delete_conversation(conversation_id)
+    return {"ok": ok, "conversation_id": conversation_id}
 
 
 @app.get("/api/conversations/{conversation_id}")

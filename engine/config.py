@@ -118,11 +118,20 @@ class SecurityPolicySettings(BaseModel):
     )
 
 
+class ProjectItem(BaseModel):
+    """Saved Operational Project in Micelio."""
+    name: str
+    path: str
+    description: str = ""
+
+
 class MicelioConfig(BaseModel):
+    theme: str = "dark"  # "dark" | "light"
     active_provider: str = "anthropic"  # "phoenix" | "boto3" | "anthropic"
     active_workspace: str = Field(
         default_factory=lambda: str(Path.cwd())
     )
+    saved_projects: List[ProjectItem] = Field(default_factory=list)
     phoenix: PhoenixSettings = Field(default_factory=PhoenixSettings)
     boto3: Boto3Settings = Field(default_factory=Boto3Settings)
     anthropic: AnthropicSettings = Field(default_factory=AnthropicSettings)

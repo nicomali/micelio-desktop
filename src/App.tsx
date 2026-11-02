@@ -13,13 +13,17 @@ import {
   HelpCircle,
   KeyRound,
   Layers,
+  Moon,
   PanelLeft,
   PanelRight,
+  Pencil,
   Plus,
   Settings,
   ShieldAlert,
   Sparkles,
+  Sun,
   Terminal,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
@@ -104,6 +108,9 @@ export default function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [feedbackComment, setFeedbackComment] = useState('');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [editingConvId, setEditingConvId] = useState<string | null>(null);
+  const [editingConvTitle, setEditingConvTitle] = useState<string>('');
 
   const wsRef = useRef<WebSocket | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -142,6 +149,10 @@ export default function App() {
       ]);
 
       setConfig(cfgRes);
+      const initialTheme = cfgRes.theme === 'light' ? 'light' : 'dark';
+      setTheme(initialTheme);
+      document.documentElement.classList.toggle('light', initialTheme === 'light');
+      document.documentElement.classList.toggle('dark', initialTheme === 'dark');
       setActiveProvider(cfgRes.active_provider || 'anthropic');
       setCredentials(credRes.credentials || []);
       setWindowsTargets(credRes.windows_targets || []);
@@ -316,17 +327,27 @@ export default function App() {
     }
   };
 
-  const createNewConversation = async () => {
-    const res = await fetch(`${ENGINE_HTTP}/api/conversations/new`, { method: 'POST' }).then((r) =>
-      r.json()
-    );
+  const fetchConversationsList = async (projPath?: string) => {
+    const p = projPath ?? workspacePath;
+    const q = p ? `?project_path=${encodeURIComponent(p)}` : '';
+    const convRes = await fetch(`${ENGINE_HTTP}/api/conversations${q}`).then((r) => r.json());
+    const list = convRes.conversations || [];
+    setConversations(list);
+    return list;
+  };
+
+  const createNewConversation = async (projOverride?: string) => {
+    const res = await fetch(`${ENGINE_HTTP}/api/conversations/new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_path: projOverride || workspacePath }),
+    }).then((r) => r.json());
     const cid = res.conversation_id;
     setActiveConvId(cid);
     setMessages([]);
     setArtifacts([]);
     setSelectedArtifact(null);
-    const convRes = await fetch(`${ENGINE_HTTP}/api/conversations`).then((r) => r.json());
-    setConversations(convRes.conversations || []);
+    await fetchConversationsList(projOverride || workspacePath);
   };
 
   const selectConversation = async (cid: string) => {
@@ -340,8 +361,47 @@ export default function App() {
     } else {
       setSelectedArtifact(null);
     }
-    const convRes = await fetch(`${ENGINE_HTTP}/api/conversations`).then((r) => r.json());
-    setConversations(convRes.conversations || []);
+    await fetchConversationsList();
+  };
+
+  const handleRenameConversation = async (cid: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      setEditingConvId(null);
+      return;
+    }
+    await fetch(`${ENGINE_HTTP}/api/conversations/${cid}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle.trim() }),
+    });
+    setEditingConvId(null);
+    await fetchConversationsList();
+  };
+
+  const handleDeleteConversation = async (cid: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await fetch(`${ENGINE_HTTP}/api/conversations/${cid}`, { method: 'DELETE' });
+    const remaining = await fetchConversationsList();
+    if (activeConvId === cid) {
+      if (remaining.length > 0) {
+        await selectConversation(remaining[0].id);
+      } else {
+        await createNewConversation();
+      }
+    }
+  };
+
+  const handleToggleTheme = async () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.classList.toggle('light', next === 'light');
+    document.documentElement.classList.toggle('dark', next === 'dark');
+    const updated = await fetch(`${ENGINE_HTTP}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: next }),
+    }).then((r) => r.json());
+    setConfig(updated);
   };
 
   const handleSendMessage = () => {
@@ -372,18 +432,50 @@ export default function App() {
     setConfig(updated);
   };
 
-  const handleSelectWorkspace = async (newPath: string) => {
+  const handleSelectWorkspace = async (newPath: string, projectName?: string) => {
     if (!newPath.trim()) return;
+    const clean = newPath.trim().replace(/\\/g, '/');
+    const projTitle = projectName || clean.split('/').filter(Boolean).pop() || 'Proyecto';
+
+    const existingProjects: Array<{ name: string; path: string }> = config?.saved_projects || [];
+    const filtered = existingProjects.filter(
+      (p) => p.path.replace(/\\/g, '/').toLowerCase() !== clean.toLowerCase()
+    );
+    const updatedProjects = [{ name: projTitle, path: clean }, ...filtered];
+
     const updated = await fetch(`${ENGINE_HTTP}/api/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active_workspace: newPath.trim() }),
+      body: JSON.stringify({
+        active_workspace: clean,
+        saved_projects: updatedProjects,
+      }),
     }).then((r) => r.json());
     setConfig(updated);
     const treeRes = await fetch(`${ENGINE_HTTP}/api/workspace/tree`).then((r) => r.json());
-    setWorkspacePath(treeRes.workspace || newPath.trim());
+    const resolvedWs = treeRes.workspace || clean;
+    setWorkspacePath(resolvedWs);
     setWorkspaceFiles(treeRes.files || []);
+    const projConvs = await fetchConversationsList(resolvedWs);
+    if (projConvs.length > 0) {
+      await selectConversation(projConvs[0].id);
+    } else {
+      await createNewConversation(resolvedWs);
+    }
     await fetchRuntimeStatus();
+  };
+
+  const handleRemoveSavedProject = async (pathToRemove: string) => {
+    const existingProjects: Array<{ name: string; path: string }> = config?.saved_projects || [];
+    const updatedProjects = existingProjects.filter(
+      (p) => p.path.replace(/\\/g, '/').toLowerCase() !== pathToRemove.replace(/\\/g, '/').toLowerCase()
+    );
+    const updated = await fetch(`${ENGINE_HTTP}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saved_projects: updatedProjects }),
+    }).then((r) => r.json());
+    setConfig(updated);
   };
 
   const handleSubmitQuestions = () => {
@@ -459,19 +551,38 @@ export default function App() {
 
           <button
             onClick={() => setWorkspaceModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.98] border border-white/[0.07] hover:border-white/[0.15] text-[11px] text-zinc-200 font-mono transition-all group"
-            title={`Workspace actual: ${workspacePath} (Clic para cambiar de carpeta)`}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] active:scale-[0.98] border border-white/[0.07] hover:border-white/[0.15] text-[11px] text-zinc-200 font-medium transition-all group"
+            title={`Proyecto activo: ${workspacePath} (Clic para cambiar de Proyecto)`}
           >
             <FolderOpen className="w-3.5 h-3.5 text-[#EC0000] group-hover:scale-110 transition-transform" />
-            <span>{workspaceFolderName}</span>
-            <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 font-sans ml-1">
+            <span className="text-zinc-500">Proyecto:</span>
+            <span className="font-semibold text-white">{workspaceFolderName}</span>
+            <span className="text-[10px] text-zinc-400 group-hover:text-[#EC0000] ml-1">
               Cambiar
             </span>
           </button>
         </div>
 
-        {/* Right Controls: MCP Status, WinCred Vault, Artifacts Toggle */}
+        {/* Right Controls: Theme Toggle, MCP Status, WinCred Vault, Drawer Toggle */}
         <div className="flex items-center gap-1.5">
+          {/* Light / Dark Mode Toggle */}
+          <button
+            onClick={handleToggleTheme}
+            className="px-2.5 py-1 rounded-lg hover:bg-white/[0.05] text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition"
+            title={theme === 'dark' ? 'Cambiar a Modo Claro Santander' : 'Cambiar a Modo Oscuro'}
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span>Claro</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Oscuro</span>
+              </>
+            )}
+          </button>
           {/* MCP Status Pill */}
           <button
             onClick={() => setSettingsModalOpen(true)}
@@ -536,43 +647,93 @@ export default function App() {
           <aside className="w-60 border-r border-white/[0.06] bg-[#0C0C0E] flex flex-col shrink-0">
             <div className="p-2.5">
               <button
-                onClick={createNewConversation}
+                onClick={() => createNewConversation()}
                 className="w-full py-1.5 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.06] text-zinc-200 font-medium text-xs flex items-center justify-between transition group"
               >
                 <span className="flex items-center gap-2">
                   <Plus className="w-3.5 h-3.5 text-[#EC0000]" />
-                  <span>Nuevo hilo</span>
+                  <span>Nueva sesión</span>
                 </span>
                 <kbd className="text-[10px] text-zinc-500 font-mono">⌘N</kbd>
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-2 py-1 space-y-5">
-              {/* Threads */}
+              {/* Project Sessions with Rename & Delete */}
               <div>
                 <div className="px-2 mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                  Recientes
+                  Sesiones del Proyecto ({conversations.length})
                 </div>
                 <div className="space-y-0.5">
                   {conversations.map((c) => {
                     const active = activeConvId === c.id;
+                    const isEditing = editingConvId === c.id;
+
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={c.id}
+                          className="px-2 py-1 rounded-lg bg-white/[0.08] flex items-center gap-1"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingConvTitle}
+                            onChange={(e) => setEditingConvTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                void handleRenameConversation(c.id, editingConvTitle);
+                              } else if (e.key === 'Escape') {
+                                setEditingConvId(null);
+                              }
+                            }}
+                            onBlur={() => void handleRenameConversation(c.id, editingConvTitle)}
+                            className="flex-1 bg-transparent text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                      );
+                    }
+
                     return (
-                      <button
+                      <div
                         key={c.id}
                         onClick={() => selectConversation(c.id)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs truncate transition flex items-center gap-2 ${
+                        className={`group w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between cursor-pointer ${
                           active
                             ? 'bg-white/[0.07] text-white font-medium'
                             : 'text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200'
                         }`}
                       >
-                        <span
-                          className={`w-1 h-1 rounded-full shrink-0 ${
-                            active ? 'bg-[#EC0000]' : 'bg-transparent'
-                          }`}
-                        />
-                        <span className="truncate">{c.title || 'Nueva conversación'}</span>
-                      </button>
+                        <div className="flex items-center gap-2 truncate pr-1">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              active ? 'bg-[#EC0000]' : 'bg-transparent'
+                            }`}
+                          />
+                          <span className="truncate">{c.title || 'Nueva sesión'}</span>
+                        </div>
+
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingConvId(c.id);
+                              setEditingConvTitle(c.title || '');
+                            }}
+                            className="p-1 rounded hover:bg-white/[0.1] text-zinc-400 hover:text-white"
+                            title="Renombrar sesión"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteConversation(c.id, e)}
+                            className="p-1 rounded hover:bg-red-500/20 text-zinc-400 hover:text-red-400"
+                            title="Eliminar sesión"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -1225,7 +1386,9 @@ export default function App() {
         isOpen={workspaceModalOpen}
         onClose={() => setWorkspaceModalOpen(false)}
         currentWorkspace={workspacePath}
+        savedProjects={config?.saved_projects || []}
         onSelectWorkspace={handleSelectWorkspace}
+        onRemoveSavedProject={handleRemoveSavedProject}
         engineHttp={ENGINE_HTTP}
       />
     </div>

@@ -81,9 +81,85 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(148, 163, 184, 0.25);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(236, 0, 0, 0.45);
+}
+
+/* Clean Santander Light Theme Overrides (`html.light`) */
+html.light body {
+  background-color: #F8FAFC;
+  color: #0F172A;
+}
+
+html.light .bg-\[\#09090B\] {
+  background-color: #F8FAFC !important;
+}
+
+html.light .bg-\[\#0C0C0E\],
+html.light .bg-\[\#0D0D10\],
+html.light .bg-\[\#0F0F13\],
+html.light .bg-\[\#0F0F12\] {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .bg-\[\#111114\],
+html.light .bg-\[\#111115\],
+html.light .bg-\[\#121216\],
+html.light .bg-\[\#141418\],
+html.light .bg-\[\#16161B\],
+html.light .bg-\[\#0B0B0D\] {
+  background-color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#18181C\] {
+  background-color: #FEF2F2 !important;
+  border-color: rgba(236, 0, 0, 0.2) !important;
+}
+
+html.light .text-white,
+html.light .text-zinc-100 {
+  color: #0F172A !important;
+}
+
+html.light .text-zinc-200,
+html.light .text-zinc-300 {
+  color: #1E293B !important;
+}
+
+html.light .text-zinc-400,
+html.light .text-zinc-500 {
+  color: #64748B !important;
+}
+
+html.light .border-white\/\[0\.04\],
+html.light .border-white\/\[0\.05\],
+html.light .border-white\/\[0\.06\],
+html.light .border-white\/\[0\.07\],
+html.light .border-white\/\[0\.08\],
+html.light .border-white\/\[0\.09\],
+html.light .border-white\/\[0\.1\],
+html.light .border-white\/\[0\.12\] {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .bg-white\/\[0\.015\],
+html.light .bg-white\/\[0\.02\],
+html.light .bg-white\/\[0\.03\],
+html.light .bg-white\/\[0\.04\],
+html.light .bg-white\/\[0\.05\],
+html.light .bg-white\/\[0\.06\],
+html.light .bg-white\/\[0\.07\] {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Keep white text on red buttons in light mode */
+html.light .bg-\[\#EC0000\] {
+  color: #FFFFFF !important;
+}
+html.light .bg-\[\#EC0000\] span {
+  color: #FFFFFF !important;
 }

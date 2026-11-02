@@ -35,7 +35,22 @@ class ConversationStore:
         self.transcript_full_path = self.logs_dir / "transcript_full.jsonl"
         self.artifacts_meta_path = self.brain_dir / "artifacts_meta.json"
         self.messages_path = self.logs_dir / "messages.json"
+        self.meta_path = self.brain_dir / "session_meta.json"
         self._step_counter = self._count_existing_steps()
+
+    def get_session_meta(self) -> Dict[str, Any]:
+        if self.meta_path.exists():
+            try:
+                return json.loads(self.meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def save_session_meta(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        meta = self.get_session_meta()
+        meta.update(patch)
+        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        return meta
 
     def _count_existing_steps(self) -> int:
         if not self.transcript_full_path.exists():
@@ -163,18 +178,35 @@ class ConversationStore:
         return results
 
 
-def list_all_conversations() -> List[Dict[str, Any]]:
+def list_all_conversations(project_path: Optional[str] = None) -> List[Dict[str, Any]]:
     brain_root = get_app_data_dir() / "brain"
     convs: List[Dict[str, Any]] = []
     if not brain_root.exists():
         return convs
+
+    norm_filter = str(Path(project_path).resolve()).replace("\\", "/").lower() if project_path else None
+
     for d in sorted(brain_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if not d.is_dir():
             continue
+        meta_file = d / "session_meta.json"
+        meta: Dict[str, Any] = {}
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+
+        conv_project = meta.get("project_path", "")
+        if norm_filter and conv_project:
+            norm_conv = str(Path(conv_project).resolve()).replace("\\", "/").lower()
+            if norm_conv != norm_filter:
+                continue
+
         msgs_file = d / ".system_generated" / "logs" / "messages.json"
-        title = d.name
+        title = meta.get("custom_title") or ""
         updated_at = datetime.fromtimestamp(d.stat().st_mtime, tz=timezone.utc).isoformat()
-        if msgs_file.exists():
+        if not title and msgs_file.exists():
             try:
                 msgs = json.loads(msgs_file.read_text(encoding="utf-8"))
                 for m in msgs:
@@ -183,12 +215,29 @@ def list_all_conversations() -> List[Dict[str, Any]]:
                         break
             except Exception:
                 pass
+        if not title:
+            title = "Nueva sesión"
+
         convs.append(
             {
                 "id": d.name,
                 "title": title,
+                "project_path": conv_project,
                 "updated_at": updated_at,
                 "artifact_dir": str(d.resolve()),
             }
         )
     return convs
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    import shutil
+
+    brain_dir = get_app_data_dir() / "brain" / conversation_id
+    if not brain_dir.exists() or not brain_dir.is_dir():
+        return False
+    try:
+        shutil.rmtree(brain_dir)
+        return True
+    except Exception:
+        return False
