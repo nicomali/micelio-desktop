@@ -18,10 +18,15 @@ def build_system_prompt(
     available_skills: List[Dict[str, str]],
     active_subagents: List[Dict[str, str]],
     slash_command_hint: str = "",
+    workspace_playbooks: List[Dict[str, str]] | None = None,
 ) -> str:
     skills_block = "\n".join(
         f"- {s['name']} ({s['path']}): {s['description']}" for s in available_skills
     ) or "- (No custom skills installed yet)"
+
+    playbooks_block = "\n".join(
+        f"- {p['name']} ({p['path']}): {p['description']}" for p in (workspace_playbooks or [])
+    ) or "- (No workspace playbooks found in this folder; user can add PLAYBOOK.md or .micelio/workflows/*.md)"
 
     subagents_block = "\n".join(
         f"- {sa['name']}: {sa['description']}" for sa in active_subagents
@@ -78,6 +83,12 @@ Credentials are securely managed via the **Windows Credential Manager (WinCred)*
 If a skill is relevant to your current task, read its `SKILL.md` file using `read_file` before proceeding:
 {skills_block}
 </skills>
+
+<workspace_playbooks_and_workflows>
+The active workspace `{workspace_dir}` may contain user-defined Playbooks, Workflows (`PLAYBOOK.md`, `WORKFLOW.md`, `.micelio/workflows/*.md`) and custom scripts.
+When the user asks to execute a Playbook or workflow, read the corresponding markdown file with `read_file` and execute its steps and scripts in order:
+{playbooks_block}
+</workspace_playbooks_and_workflows>
 
 <communication_style>
 - Keep your responses clear, technical, and concise.

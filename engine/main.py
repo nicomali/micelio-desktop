@@ -30,7 +30,7 @@ from engine.core.scheduler import scheduler_manager
 from engine.core.subagents import subagent_manager
 from engine.core.transcript import ConversationStore, list_all_conversations
 from engine.mcp_host.manager import mcp_host
-from engine.skills.loader import discover_skills
+from engine.skills.loader import discover_skills, discover_workspace_playbooks
 from engine.tools.filesystem import IGNORE_DIRS
 from engine.tools.terminal import terminal_manager
 
@@ -287,6 +287,7 @@ async def get_runtime_status() -> Dict[str, Any]:
         "subagents": subagent_manager.list_all_instances(),
         "schedules": scheduler_manager.list_jobs(),
         "skills": discover_skills(),
+        "playbooks": discover_workspace_playbooks(),
         "mcp_tools": [
             {"name": t.name, "description": t.description}
             for t in mcp_host.get_all_mcp_tools()

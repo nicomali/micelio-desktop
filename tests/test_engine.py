@@ -20,6 +20,7 @@ from engine.core.transcript import ConversationStore
 from engine.credentials import WindowsCredentialVault
 from engine.llm.base import parse_fallback_response
 from engine.mcp_host.manager import mcp_host
+from engine.sandbox import sandbox_env
 from engine.skills.loader import discover_skills
 from engine.tools.registry import execute_tool, get_builtin_tool_definitions
 
@@ -99,11 +100,45 @@ def test_mcp_and_skills_discovery() -> None:
     skill_names = {s["name"] for s in skills}
     assert "santander-standards" in skill_names
     assert "git-jira-workflow" in skill_names
+    assert "santander-pptx-designer" in skill_names
 
     # Verify Subagent types
     sub_types = {s["name"] for s in subagent_manager.list_types()}
     assert "self" in sub_types
     assert "research" in sub_types
+
+
+def test_runtime_sandbox_blocks_outside_writes() -> None:
+    import subprocess
+    import sys
+
+    conv_id = f"test_sbx_{uuid.uuid4().hex[:6]}"
+    store = ConversationStore(conv_id)
+    env = sandbox_env.build_sandboxed_env(
+        workspace_dir=str(store.brain_dir),
+        scratch_dir=str(store.scratch_dir),
+    )
+
+    # 1. Writing inside scratch_dir MUST succeed
+    allowed_file = (store.scratch_dir / "ok.txt").as_posix()
+    res_ok = subprocess.run(
+        [sys.executable, "-c", f"open('{allowed_file}', 'w').write('ok')"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert res_ok.returncode == 0
+
+    # 2. Writing outside allowed roots (e.g. parent of app_dir) MUST be blocked by sitecustomize audit hook
+    forbidden_file = (Path.home() / "micelio_forbidden_write_test.txt").as_posix()
+    res_blocked = subprocess.run(
+        [sys.executable, "-c", f"open('{forbidden_file}', 'w').write('hack')"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert res_blocked.returncode != 0
+    assert "Micelio Sandbox" in res_blocked.stderr
 
 
 def test_filesystem_and_artifact_tools() -> None:

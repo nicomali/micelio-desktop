@@ -81,12 +81,13 @@ class TerminalTaskManager:
             cmd = ["/bin/sh", "-c", command_line]
 
         import os
-        env = dict(os.environ)
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUTF8"] = "1"
-        env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-        if scratch_dir:
-            env["MICELIO_SCRATCH_DIR"] = scratch_dir
+        from engine.sandbox import sandbox_env
+
+        safe_scratch = scratch_dir or str(Path(work_dir) / ".micelio_scratch")
+        env = sandbox_env.build_sandboxed_env(
+            workspace_dir=work_dir,
+            scratch_dir=safe_scratch,
+        )
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

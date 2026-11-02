@@ -43,10 +43,12 @@ def parse_skill_frontmatter(skill_md_path: Path) -> Dict[str, str]:
 
 
 def discover_skills() -> List[Dict[str, str]]:
+    config_manager.config = config_manager._load()
     roots: List[Path] = [
         Path(__file__).resolve().parent.parent.parent / "skills",
         get_app_data_dir() / "skills",
         Path(config_manager.config.active_workspace) / ".micelio" / "skills",
+        Path(config_manager.config.active_workspace) / "skills",
     ]
     seen: Dict[str, Dict[str, str]] = {}
     for root in roots:
@@ -56,3 +58,47 @@ def discover_skills() -> List[Dict[str, str]]:
             info = parse_skill_frontmatter(skill_md)
             seen[info["name"]] = info
     return list(seen.values())
+
+
+def discover_workspace_playbooks() -> List[Dict[str, str]]:
+    """
+    Discover user-defined Playbooks and Workflows inside the active workspace:
+    - `<workspace>/PLAYBOOK.md`, `<workspace>/WORKFLOW.md`, `<workspace>/AGENTS.md`
+    - `<workspace>/playbooks/*.md`
+    - `<workspace>/.micelio/workflows/*.md`
+    - `<workspace>/workflows/*.md`
+    """
+    config_manager.config = config_manager._load()
+    ws = Path(config_manager.config.active_workspace)
+    if not ws.exists():
+        return []
+
+    candidates: List[Path] = []
+    for root_doc in ("PLAYBOOK.md", "WORKFLOW.md", "AGENTS.md"):
+        p = ws / root_doc
+        if p.exists() and p.is_file():
+            candidates.append(p)
+
+    for folder_rel in ("playbooks", "workflows", ".micelio/workflows", ".micelio/playbooks"):
+        folder = ws / folder_rel
+        if folder.exists() and folder.is_dir():
+            candidates.extend(sorted(folder.glob("*.md")))
+
+    playbooks: List[Dict[str, str]] = []
+    seen_paths = set()
+    for path in candidates:
+        resolved = str(path.resolve())
+        if resolved in seen_paths:
+            continue
+        seen_paths.add(resolved)
+        info = parse_skill_frontmatter(path)
+        title = info["name"] if info["name"] != path.parent.name else path.stem
+        playbooks.append(
+            {
+                "name": title,
+                "description": info["description"],
+                "path": resolved.replace("\\", "/"),
+                "rel_path": str(path.relative_to(ws)).replace("\\", "/"),
+            }
+        )
+    return playbooks

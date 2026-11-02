@@ -22,7 +22,7 @@ from engine.core.subagents import SubagentInstance, SubagentTypeSpec, subagent_m
 from engine.core.transcript import ConversationStore
 from engine.llm.base import ToolCallRequest
 from engine.llm.router import llm_router
-from engine.skills.loader import discover_skills
+from engine.skills.loader import discover_skills, discover_workspace_playbooks
 from engine.tools.registry import execute_tool, get_builtin_tool_definitions
 from engine.tools.terminal import terminal_manager
 
@@ -189,6 +189,7 @@ class AgentOrchestrator:
         conversation_id = store.conversation_id
         provider = llm_router.get_provider(provider_override)
         skills = discover_skills()
+        playbooks = discover_workspace_playbooks()
         subagents = subagent_manager.list_types()
 
         system_prompt = custom_system_prompt or build_system_prompt(
@@ -198,6 +199,7 @@ class AgentOrchestrator:
             available_skills=skills,
             active_subagents=subagents,
             slash_command_hint=slash_hint,
+            workspace_playbooks=playbooks,
         )
 
         tools = get_builtin_tool_definitions(

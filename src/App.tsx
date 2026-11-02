@@ -86,8 +86,9 @@ export default function App() {
     subagents: any[];
     schedules: any[];
     skills: any[];
+    playbooks?: any[];
     mcp_tools: any[];
-  }>({ tasks: [], subagents: [], schedules: [], skills: [], mcp_tools: [] });
+  }>({ tasks: [], subagents: [], schedules: [], skills: [], playbooks: [], mcp_tools: [] });
 
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -571,6 +572,42 @@ export default function App() {
                         <FileText className="w-3.5 h-3.5 text-[#EC0000] shrink-0" />
                         <span className="truncate font-mono text-[11px]">{art.name}</span>
                       </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Workspace Playbooks / Workflows (if present in folder) */}
+              {runtimeStatus.playbooks && runtimeStatus.playbooks.length > 0 && (
+                <div>
+                  <div className="px-2 mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    Playbooks & Workflows ({runtimeStatus.playbooks.length})
+                  </div>
+                  <div className="space-y-1">
+                    {runtimeStatus.playbooks.map((pb: any) => (
+                      <div
+                        key={pb.path}
+                        className="group flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] text-xs transition"
+                      >
+                        <button
+                          onClick={() => handleOpenFilePreview(pb.path)}
+                          className="flex-1 text-left truncate text-zinc-200 font-medium"
+                          title={`Ver ${pb.rel_path}`}
+                        >
+                          {pb.name}
+                        </button>
+                        <button
+                          onClick={() =>
+                            setInput(
+                              `Ejecuta el playbook @${pb.rel_path} siguiendo sus instrucciones paso a paso.`
+                            )
+                          }
+                          className="px-2 py-0.5 rounded bg-[#EC0000]/20 hover:bg-[#EC0000] text-[#FF5555] hover:text-white text-[10px] font-medium transition shrink-0"
+                          title="Ejecutar este Playbook"
+                        >
+                          ▶ Run
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
