@@ -38,7 +38,8 @@ def parse_skill_frontmatter(skill_md_path: Path) -> Dict[str, str]:
     return {
         "name": name,
         "description": description,
-        "path": str(skill_md_path.resolve()),
+        "path": str(skill_md_path.resolve()).replace("\\", "/"),
+        "content": text,
     }
 
 

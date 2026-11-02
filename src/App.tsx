@@ -244,6 +244,25 @@ export default function App() {
     } catch (_) {}
   };
 
+  const handleOpenSkill = async (sk: any) => {
+    setNewSkillMode(false);
+    setFileSaveStatus('');
+    if (sk.content) {
+      setPreviewFile({
+        name: 'SKILL.md',
+        path: sk.path,
+        content: sk.content,
+      });
+      setEditedFileContent(sk.content);
+      setIsEditingFile(true);
+      setRightTab('file');
+      setRightDrawerOpen(true);
+      return;
+    }
+    await handleOpenFilePreview(sk.path);
+    setIsEditingFile(true);
+  };
+
   const handleStartNewSkill = () => {
     const template = `---
 name: mi-nueva-skill
@@ -995,7 +1014,7 @@ Explica el objetivo operativo o de negocio de esta habilidad.
                   {runtimeStatus.skills.map((sk: any) => (
                     <div
                       key={sk.name}
-                      onClick={() => handleOpenFilePreview(sk.path)}
+                      onClick={() => void handleOpenSkill(sk)}
                       className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/[0.05] text-xs text-zinc-300 hover:text-white cursor-pointer transition"
                       title={`${sk.description}\n(${sk.path}) — Clic para ver o editar SKILL.md`}
                     >

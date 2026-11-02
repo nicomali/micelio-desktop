@@ -567,4 +567,11 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("MICELIO_ENGINE_PORT", "8765"))
-    uvicorn.run("engine.main:app", host="127.0.0.1", port=port, reload=False)
+    use_reload = os.environ.get("MICELIO_NO_RELOAD", "0") != "1"
+    uvicorn.run(
+        "engine.main:app",
+        host="127.0.0.1",
+        port=port,
+        reload=use_reload,
+        reload_dirs=["engine"] if use_reload else None,
+    )
