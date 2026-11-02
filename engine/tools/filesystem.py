@@ -19,6 +19,8 @@ MAX_READ_BYTES = 46080
 
 
 def resolve_path(raw_path: str, workspace_dir: Optional[str] = None) -> Path:
+    # Always reload latest config so workspace changes from UI take effect immediately
+    config_manager.config = config_manager._load()
     p = Path(raw_path)
     if p.is_absolute():
         return p

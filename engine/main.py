@@ -191,6 +191,7 @@ async def submit_artifact_feedback(payload: ArtifactFeedbackPayload) -> Dict[str
 
 @app.get("/api/workspace/tree")
 async def get_workspace_tree(max_entries: int = 120) -> Dict[str, Any]:
+    config_manager.config = config_manager._load()
     root = Path(config_manager.config.active_workspace)
     entries: List[Dict[str, Any]] = []
     if root.exists():
@@ -213,6 +214,27 @@ async def get_workspace_tree(max_entries: int = 120) -> Dict[str, Any]:
     return {
         "workspace": str(root.resolve()).replace("\\", "/"),
         "files": entries,
+    }
+
+
+@app.get("/api/workspace/file")
+async def read_workspace_file(path: str) -> Dict[str, Any]:
+    """Read a file from the active workspace so the user can preview it in the right drawer."""
+    config_manager.config = config_manager._load()
+    root = Path(config_manager.config.active_workspace).resolve()
+    target = Path(path)
+    if not target.is_absolute():
+        target = (root / target).resolve()
+    if not target.exists() or not target.is_file():
+        return {"error": f"Archivo no encontrado: {target}", "content": "", "name": target.name}
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return {"error": str(exc), "content": "", "name": target.name}
+    return {
+        "name": target.name,
+        "path": str(target).replace("\\", "/"),
+        "content": content[:60000],
     }
 
 

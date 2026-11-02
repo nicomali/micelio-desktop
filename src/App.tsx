@@ -65,7 +65,12 @@ export default function App() {
 
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
-  const [rightTab, setRightTab] = useState<'artifact' | 'activity'>('artifact');
+  const [rightTab, setRightTab] = useState<'file' | 'artifact' | 'activity'>('artifact');
+  const [previewFile, setPreviewFile] = useState<{
+    name: string;
+    path: string;
+    content: string;
+  } | null>(null);
 
   const [config, setConfig] = useState<Record<string, any> | null>(null);
   const [activeProvider, setActiveProvider] = useState<string>('anthropic');
@@ -157,8 +162,32 @@ export default function App() {
 
   const fetchRuntimeStatus = async () => {
     try {
-      const rt = await fetch(`${ENGINE_HTTP}/api/runtime-status`).then((r) => r.json());
+      const [rt, treeRes] = await Promise.all([
+        fetch(`${ENGINE_HTTP}/api/runtime-status`).then((r) => r.json()),
+        fetch(`${ENGINE_HTTP}/api/workspace/tree`).then((r) => r.json()),
+      ]);
       setRuntimeStatus(rt);
+      if (treeRes.workspace) {
+        setWorkspacePath(treeRes.workspace);
+        setWorkspaceFiles(treeRes.files || []);
+      }
+    } catch (_) {}
+  };
+
+  const handleOpenFilePreview = async (relOrAbsPath: string) => {
+    try {
+      const res = await fetch(
+        `${ENGINE_HTTP}/api/workspace/file?path=${encodeURIComponent(relOrAbsPath)}`
+      ).then((r) => r.json());
+      if (!res.error) {
+        setPreviewFile({
+          name: res.name,
+          path: res.path,
+          content: res.content || '',
+        });
+        setRightTab('file');
+        setRightDrawerOpen(true);
+      }
     } catch (_) {}
   };
 
@@ -209,6 +238,13 @@ export default function App() {
               : tc
           )
         );
+        break;
+      case 'file_written':
+      case 'file_edited':
+        void fetchRuntimeStatus();
+        if (ev.path) {
+          void handleOpenFilePreview(ev.path);
+        }
         break;
       case 'artifact_updated':
         if (ev.artifact) {
@@ -442,17 +478,18 @@ export default function App() {
 
           <div className="h-3.5 w-[1px] bg-white/[0.08] mx-0.5" />
 
-          {/* Toggle Right Drawer (Artifacts / Activity) */}
+          {/* Toggle Right Drawer (Code Viewer / Artifacts / Activity) */}
           <button
             onClick={() => setRightDrawerOpen((v) => !v)}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition ${
-              rightDrawerOpen || artifacts.length > 0
-                ? 'bg-white/[0.06] text-zinc-200'
+              rightDrawerOpen || artifacts.length > 0 || previewFile
+                ? 'bg-white/[0.07] text-zinc-100'
                 : 'text-zinc-400 hover:bg-white/[0.05]'
             }`}
-            title="Panel de Artifacts y Subagentes"
+            title="Abrir/cerrar Visor de Código, Artifacts y Subagentes"
           >
             <PanelRight className="w-3.5 h-3.5" />
+            <span>Visor</span>
             {artifacts.length > 0 && (
               <span className="px-1.5 rounded-full bg-[#EC0000] text-white text-[10px]">
                 {artifacts.length}
@@ -539,32 +576,43 @@ export default function App() {
                 </div>
               )}
 
-              {/* Workspace Files quick mention */}
+              {/* Workspace Files Explorer */}
               <div>
                 <div className="px-2 mb-1.5 flex items-center justify-between">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                    Workspace ({workspaceFiles.length})
+                    Archivos en {workspaceFolderName} ({workspaceFiles.length})
                   </span>
-                  <button
-                    onClick={() => setWorkspaceModalOpen(true)}
-                    className="text-[10px] text-[#FF4D4D] hover:underline font-medium"
-                  >
-                    Cambiar carpeta
-                  </button>
                 </div>
-                <div className="space-y-0.5 max-h-52 overflow-y-auto">
-                  {workspaceFiles.slice(0, 35).map((f) => (
-                    <button
-                      key={f.rel_path}
-                      onClick={() => setInput((prev) => `${prev} @${f.rel_path} `.trimStart())}
-                      className="w-full text-left px-2.5 py-1 rounded-md hover:bg-white/[0.04] text-[11px] font-mono text-zinc-500 hover:text-zinc-300 flex items-center gap-2 truncate transition"
-                      title="Clic para mencionar en el prompt"
-                    >
-                      <FileCode2 className="w-3 h-3 shrink-0 text-zinc-600" />
-                      <span className="truncate">{f.rel_path}</span>
-                    </button>
-                  ))}
-                </div>
+                {workspaceFiles.length === 0 ? (
+                  <div className="px-2.5 py-3 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[11px] text-zinc-500 leading-relaxed">
+                    Esta carpeta aún no tiene archivos. Pídele al agente que cree uno o cambia de carpeta arriba.
+                  </div>
+                ) : (
+                  <div className="space-y-0.5 max-h-56 overflow-y-auto">
+                    {workspaceFiles.slice(0, 50).map((f) => (
+                      <div
+                        key={f.rel_path}
+                        className="group flex items-center justify-between px-2 py-1 rounded-md hover:bg-white/[0.05] text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition"
+                      >
+                        <button
+                          onClick={() => handleOpenFilePreview(f.rel_path)}
+                          className="flex-1 text-left flex items-center gap-2 truncate"
+                          title="Clic para ver el archivo en el visor derecho"
+                        >
+                          <FileCode2 className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-[#EC0000] transition" />
+                          <span className="truncate">{f.rel_path}</span>
+                        </button>
+                        <button
+                          onClick={() => setInput((prev) => `${prev} @${f.rel_path} `.trimStart())}
+                          className="opacity-0 group-hover:opacity-100 px-1.5 py-0.2 rounded bg-white/[0.07] hover:bg-white/[0.15] text-[10px] text-zinc-300 transition shrink-0"
+                          title="Mencionar @archivo en el chat"
+                        >
+                          @
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -678,25 +726,36 @@ export default function App() {
                     {/* Compact Tool Call Pills (Antigravity Style) */}
                     {msg.tool_calls && msg.tool_calls.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        {msg.tool_calls.map((tc) => (
-                          <div
-                            key={tc.id}
-                            className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#111115] border border-white/[0.06] text-[11px] font-mono text-zinc-300"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            <span className="text-zinc-200 font-medium">{tc.name}</span>
-                            {tc.arguments?.Path && (
-                              <span className="text-zinc-500 truncate max-w-[220px]">
-                                {String(tc.arguments.Path).split(/[\\/]/).pop()}
-                              </span>
-                            )}
-                            {tc.arguments?.CommandLine && (
-                              <span className="text-zinc-500 truncate max-w-[220px]">
-                                {tc.arguments.CommandLine}
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                        {msg.tool_calls.map((tc) => {
+                          const filePath = tc.arguments?.Path ? String(tc.arguments.Path) : null;
+                          return (
+                            <div
+                              key={tc.id}
+                              onClick={() => {
+                                if (filePath) {
+                                  void handleOpenFilePreview(filePath);
+                                }
+                              }}
+                              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#111115] border border-white/[0.06] text-[11px] font-mono text-zinc-300 ${
+                                filePath ? 'cursor-pointer hover:border-[#EC0000]/50 hover:bg-white/[0.04] transition' : ''
+                              }`}
+                              title={filePath ? `Clic para abrir ${filePath} en el visor` : undefined}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span className="text-zinc-200 font-medium">{tc.name}</span>
+                              {filePath && (
+                                <span className="text-zinc-400 underline decoration-zinc-700 truncate max-w-[220px]">
+                                  {filePath.split(/[\\/]/).pop()}
+                                </span>
+                              )}
+                              {tc.arguments?.CommandLine && (
+                                <span className="text-zinc-500 truncate max-w-[220px]">
+                                  {tc.arguments.CommandLine}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -915,11 +974,21 @@ export default function App() {
           </div>
         </main>
 
-        {/* Slide-Over Right Drawer for Artifacts & Background Subagents (Only visible when opened or when an artifact arrives) */}
+        {/* Slide-Over Right Drawer: File Code Preview, Artifacts & Subagents */}
         {rightDrawerOpen && (
-          <aside className="w-[460px] border-l border-white/[0.07] bg-[#0C0C0E] flex flex-col shrink-0 shadow-2xl animate-drawer-left">
+          <aside className="w-[480px] border-l border-white/[0.07] bg-[#0C0C0E] flex flex-col shrink-0 shadow-2xl animate-drawer-left select-text">
             <div className="h-11 px-4 border-b border-white/[0.06] flex items-center justify-between">
               <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg text-xs">
+                <button
+                  onClick={() => setRightTab('file')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+                    rightTab === 'file'
+                      ? 'bg-white/[0.1] text-white'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Código {previewFile ? `(${previewFile.name})` : ''}
+                </button>
                 <button
                   onClick={() => setRightTab('artifact')}
                   className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
@@ -928,7 +997,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Artifact ({artifacts.length})
+                  Artifacts ({artifacts.length})
                 </button>
                 <button
                   onClick={() => setRightTab('activity')}
@@ -938,7 +1007,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Subagentes & Tasks ({runtimeStatus.subagents.length + runtimeStatus.tasks.length})
+                  Actividad ({runtimeStatus.subagents.length + runtimeStatus.tasks.length})
                 </button>
               </div>
 
@@ -950,7 +1019,39 @@ export default function App() {
               </button>
             </div>
 
-            {rightTab === 'artifact' ? (
+            {rightTab === 'file' ? (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {previewFile ? (
+                  <>
+                    <div className="px-4 py-2.5 border-b border-white/[0.06] bg-[#0F0F13] flex items-center justify-between">
+                      <div className="truncate">
+                        <div className="text-xs font-mono font-medium text-white">
+                          {previewFile.name}
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-500 truncate">
+                          {previewFile.path}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setInput((prev) => `${prev} @${previewFile.name} `.trimStart())
+                        }
+                        className="px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-[11px] text-zinc-200 font-mono shrink-0 transition"
+                      >
+                        @ Mencionar
+                      </button>
+                    </div>
+                    <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-zinc-200 leading-relaxed bg-[#09090B]">
+                      <code>{previewFile.content}</code>
+                    </pre>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-zinc-500">
+                    Haz clic en cualquier archivo de tu carpeta (en la barra izquierda) o en una píldora `write_file` / `edit_file` del chat para inspeccionar su código aquí.
+                  </div>
+                )}
+              </div>
+            ) : rightTab === 'artifact' ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 {artifacts.length > 1 && (
                   <div className="px-4 py-2 border-b border-white/[0.05] flex items-center gap-1.5 overflow-x-auto">
