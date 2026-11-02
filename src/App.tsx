@@ -881,8 +881,11 @@ Explica el objetivo operativo o de negocio de esta habilidad.
 
               {/* Project Sessions with Rename & Delete */}
               <div>
-                <div className="px-2 mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                  Sesiones del Proyecto ({conversations.length})
+                <div className="px-2 mb-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                  <span className="truncate">
+                    Sesiones en {workspaceFolderName} ({conversations.length})
+                  </span>
+                  <span className="text-[9px] font-mono text-zinc-600 lowercase">hilos</span>
                 </div>
                 <div className="space-y-0.5">
                   {conversations.map((c) => {

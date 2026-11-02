@@ -227,9 +227,14 @@ def list_all_conversations(project_path: Optional[str] = None) -> List[Dict[str,
                 meta = {}
 
         conv_project = meta.get("project_path", "")
-        if norm_filter and conv_project:
-            norm_conv = str(Path(conv_project).resolve()).replace("\\", "/").lower()
-            if norm_conv != norm_filter:
+        if norm_filter:
+            # If conversation has a project_path associated, it MUST match the requested project
+            if conv_project:
+                norm_conv = str(Path(conv_project).resolve()).replace("\\", "/").lower()
+                if norm_conv != norm_filter:
+                    continue
+            else:
+                # Legacy conversation without metadata: exclude if a specific project was requested
                 continue
 
         msgs_file = d / ".system_generated" / "logs" / "messages.json"
