@@ -893,7 +893,8 @@ export default function App() {
 
               {/* Conversation Turns (Each turn scopes its own sticky User Prompt) */}
               {(() => {
-                const turnGroups: Array<{ userContent: string | null; steps: Message[] }> = [];
+                type MsgItem = (typeof messages)[number];
+                const turnGroups: Array<{ userContent: string | null; steps: MsgItem[] }> = [];
                 for (const msg of messages) {
                   if (msg.role === 'tool') continue;
                   const raw = msg.content || '';
