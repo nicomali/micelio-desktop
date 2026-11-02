@@ -175,10 +175,36 @@ export default function App() {
     } catch (_) {}
   };
 
+  const BINARY_EXTENSIONS = new Set([
+    'xlsx',
+    'xls',
+    'pptx',
+    'ppt',
+    'docx',
+    'doc',
+    'pdf',
+    'png',
+    'jpg',
+    'jpeg',
+    'zip',
+  ]);
+
   const handleOpenFilePreview = async (relOrAbsPath: string) => {
+    const cleanPath = relOrAbsPath.trim().replace(/^@/, '');
+    const ext = cleanPath.split('.').pop()?.toLowerCase() || '';
+    // If it's an Office/PDF/binary deliverable, open it directly in Excel/PowerPoint/Windows
+    if (BINARY_EXTENSIONS.has(ext)) {
+      await fetch(`${ENGINE_HTTP}/api/workspace/open-external`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: cleanPath }),
+      });
+      return;
+    }
+
     try {
       const res = await fetch(
-        `${ENGINE_HTTP}/api/workspace/file?path=${encodeURIComponent(relOrAbsPath)}`
+        `${ENGINE_HTTP}/api/workspace/file?path=${encodeURIComponent(cleanPath)}`
       ).then((r) => r.json());
       if (!res.error) {
         setPreviewFile({
@@ -240,12 +266,12 @@ export default function App() {
           )
         );
         break;
+      case 'file_deleted':
+        void fetchRuntimeStatus();
+        break;
       case 'file_written':
       case 'file_edited':
         void fetchRuntimeStatus();
-        if (ev.path) {
-          void handleOpenFilePreview(ev.path);
-        }
         break;
       case 'artifact_updated':
         if (ev.artifact) {
@@ -551,31 +577,6 @@ export default function App() {
                   })}
                 </div>
               </div>
-
-              {/* Artifacts in current thread */}
-              {artifacts.length > 0 && (
-                <div>
-                  <div className="px-2 mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                    Artifacts
-                  </div>
-                  <div className="space-y-0.5">
-                    {artifacts.map((art) => (
-                      <button
-                        key={art.name}
-                        onClick={() => {
-                          setSelectedArtifact(art);
-                          setRightTab('artifact');
-                          setRightDrawerOpen(true);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-zinc-300 hover:bg-white/[0.04] flex items-center gap-2 transition"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-[#EC0000] shrink-0" />
-                        <span className="truncate font-mono text-[11px]">{art.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Workspace Playbooks / Workflows (if present in folder) */}
               {runtimeStatus.playbooks && runtimeStatus.playbooks.length > 0 && (
@@ -1025,9 +1026,9 @@ export default function App() {
           </div>
         </main>
 
-        {/* Slide-Over Right Drawer: File Code Preview, Artifacts & Subagents */}
+        {/* Slide-Over Right Drawer: File Preview & Background Processes */}
         {rightDrawerOpen && (
-          <aside className="w-[480px] border-l border-white/[0.07] bg-[#0C0C0E] flex flex-col shrink-0 shadow-2xl animate-drawer-left select-text">
+          <aside className="w-[460px] border-l border-white/[0.07] bg-[#0C0C0E] flex flex-col shrink-0 shadow-2xl animate-drawer-left select-text">
             <div className="h-11 px-4 border-b border-white/[0.06] flex items-center justify-between">
               <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg text-xs">
                 <button
@@ -1038,17 +1039,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Archivo {previewFile ? `(${previewFile.name})` : ''}
-                </button>
-                <button
-                  onClick={() => setRightTab('artifact')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
-                    rightTab === 'artifact'
-                      ? 'bg-white/[0.1] text-white'
-                      : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  Planes & Reportes ({artifacts.length})
+                  Vista Previa {previewFile ? `(${previewFile.name})` : ''}
                 </button>
                 <button
                   onClick={() => setRightTab('activity')}
@@ -1098,71 +1089,7 @@ export default function App() {
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-zinc-500">
-                    Haz clic en cualquier archivo de tu carpeta (en la barra izquierda) o en una píldora `write_file` / `edit_file` del chat para inspeccionar su código aquí.
-                  </div>
-                )}
-              </div>
-            ) : rightTab === 'artifact' ? (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {artifacts.length > 1 && (
-                  <div className="px-4 py-2 border-b border-white/[0.05] flex items-center gap-1.5 overflow-x-auto">
-                    {artifacts.map((art) => (
-                      <button
-                        key={art.name}
-                        onClick={() => setSelectedArtifact(art)}
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-mono transition ${
-                          selectedArtifact?.name === art.name
-                            ? 'bg-white/[0.1] text-white'
-                            : 'text-zinc-500 hover:text-zinc-300'
-                        }`}
-                      >
-                        {art.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {selectedArtifact ? (
-                  <>
-                    <div className="flex-1 overflow-y-auto p-5">
-                      <div className="mb-4 pb-3 border-b border-white/[0.06]">
-                        <div className="text-xs font-mono text-[#FF4D4D]">
-                          {selectedArtifact.name}
-                        </div>
-                        <div className="text-xs text-zinc-400 mt-0.5">
-                          {selectedArtifact.summary}
-                        </div>
-                      </div>
-                      <RichMarkdown content={selectedArtifact.content} />
-                    </div>
-
-                    {/* Clean Proceed / Review Bar */}
-                    <div className="p-3.5 border-t border-white/[0.06] bg-[#0F0F12] flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={feedbackComment}
-                        onChange={(e) => setFeedbackComment(e.target.value)}
-                        placeholder="Agregar nota o comentario..."
-                        className="flex-1 px-3 py-1.5 rounded-lg bg-[#16161B] border border-white/[0.07] text-xs text-white placeholder-zinc-500 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => handleArtifactFeedback(false)}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 text-xs transition"
-                      >
-                        Ajustar
-                      </button>
-                      <button
-                        onClick={() => handleArtifactFeedback(true)}
-                        className="px-3.5 py-1.5 rounded-lg bg-[#EC0000] hover:bg-[#D00000] text-white text-xs font-medium flex items-center gap-1.5 transition"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Proceed</span>
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center p-8 text-center text-xs text-zinc-500">
-                    Ningún artifact abierto en esta sesión. Usa `/plan` para generar un documento de arquitectura interactivo.
+                    Selecciona un archivo de texto, CSV o Playbook en la barra izquierda para previsualizarlo aquí. Los archivos Excel y PowerPoint se abren directamente en su aplicación de Office al hacerles clic.
                   </div>
                 )}
               </div>

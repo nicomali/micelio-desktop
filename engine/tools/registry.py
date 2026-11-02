@@ -17,6 +17,7 @@ from engine.core.transcript import ConversationStore
 from engine.llm.base import ToolDefinition
 from engine.mcp_host.manager import mcp_host
 from engine.tools.filesystem import (
+    tool_delete_file,
     tool_edit_file,
     tool_find_by_name,
     tool_grep_search,
@@ -145,6 +146,20 @@ def get_builtin_tool_definitions(
                     },
                 ),
                 ToolDefinition(
+                    name="delete_file",
+                    description="Delete a file inside the active operational workspace folder.",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "Path": {
+                                "type": "string",
+                                "description": "Filename or path to delete (if user wrote @filename, pass filename without '@').",
+                            },
+                        },
+                        "required": ["Path"],
+                    },
+                ),
+                ToolDefinition(
                     name="run_command",
                     description="Execute a PowerShell/shell command in the workspace. Long commands transition to background tasks.",
                     input_schema={
@@ -256,6 +271,8 @@ async def execute_tool(
         return await tool_write_file(args, store, on_event)
     elif name == "edit_file":
         return await tool_edit_file(args, store, on_event)
+    elif name == "delete_file":
+        return await tool_delete_file(args, store, on_event)
     elif name == "find_by_name":
         return await tool_find_by_name(args, store, on_event)
     elif name == "grep_search":

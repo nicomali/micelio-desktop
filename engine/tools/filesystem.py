@@ -21,8 +21,15 @@ MAX_READ_BYTES = 46080
 def resolve_path(raw_path: str, workspace_dir: Optional[str] = None) -> Path:
     # Always reload latest config so workspace changes from UI take effect immediately
     config_manager.config = config_manager._load()
-    p = Path(raw_path)
+    cleaned = str(raw_path).strip()
+    # Strip leading '@' if the user/model passed an @file mention
+    if cleaned.startswith("@"):
+        cleaned = cleaned[1:].strip()
+    p = Path(cleaned)
     if p.is_absolute():
+        # Also handle case where model put @ right before filename in an absolute path (e.g. C:/folder/@file.pptx)
+        if p.name.startswith("@"):
+            p = p.parent / p.name[1:]
         return p
     base = Path(workspace_dir or config_manager.config.active_workspace)
     return (base / p).resolve()
@@ -281,3 +288,28 @@ async def tool_grep_search(
     if not results:
         return f"No matches found for '{query}' in {search_path}."
     return "\n".join(results)
+
+
+async def tool_delete_file(
+    args: Dict[str, Any],
+    store: ConversationStore,
+    on_event: Optional[Callable[[Dict[str, Any]], Any]] = None,
+) -> str:
+    path = resolve_path(args["Path"])
+    if not is_path_within_sandbox(path, store):
+        return (
+            f"Error: Sandbox violation — deleting files outside the active workspace ({config_manager.config.active_workspace}) "
+            f"is blocked for security: {path}"
+        )
+    if not path.exists():
+        return f"Error: File not found: {path}"
+    if path.is_dir():
+        return f"Error: {path} is a directory, not a file."
+    try:
+        path.unlink()
+    except Exception as exc:
+        return f"Error deleting {path}: {exc}"
+
+    if on_event:
+        await on_event({"type": "file_deleted", "path": str(path)})
+    return f"Successfully deleted file: {path}"

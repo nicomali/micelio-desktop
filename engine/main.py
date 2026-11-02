@@ -217,6 +217,25 @@ async def get_workspace_tree(max_entries: int = 120) -> Dict[str, Any]:
     }
 
 
+@app.post("/api/workspace/open-external")
+async def open_workspace_file_external(payload: Dict[str, str]) -> Dict[str, Any]:
+    """Open an operational deliverable (.xlsx, .pptx, .pdf, etc.) in its native Windows application."""
+    config_manager.config = config_manager._load()
+    root = Path(config_manager.config.active_workspace).resolve()
+    raw_path = payload.get("path", "").strip().lstrip("@")
+    target = Path(raw_path)
+    if not target.is_absolute():
+        target = (root / target).resolve()
+    if not target.exists():
+        return {"ok": False, "error": f"No existe el archivo: {target}"}
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(str(target))
+        return {"ok": True, "path": str(target)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @app.get("/api/workspace/file")
 async def read_workspace_file(path: str) -> Dict[str, Any]:
     """Read a file from the active workspace so the user can preview it in the right drawer."""
