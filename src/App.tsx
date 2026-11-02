@@ -40,12 +40,12 @@ const ENGINE_HTTP = 'http://127.0.0.1:8765';
 const ENGINE_WS = 'ws://127.0.0.1:8765/ws';
 
 const SLASH_COMMANDS = [
-  { cmd: '/plan', label: 'Plan', desc: 'Diseñar arquitectura antes de codificar' },
-  { cmd: '/grill-me', label: 'Grill Me', desc: 'Entrevista de diseño interactiva' },
-  { cmd: '/teamwork', label: 'Teamwork', desc: 'Subagentes en paralelo' },
-  { cmd: '/boost', label: 'Boost', desc: 'Razonamiento profundo' },
-  { cmd: '/schedule', label: 'Schedule', desc: 'Cron / Timer en background' },
-  { cmd: '/compact', label: 'Compact', desc: 'Compactar contexto' },
+  { cmd: '/plan', label: 'Plan Operativo', desc: 'Armar plan paso a paso antes de procesar' },
+  { cmd: '/grill-me', label: 'Validar Reglas', desc: 'Clarificar criterios de negocio antes de actuar' },
+  { cmd: '/teamwork', label: 'Paralelo', desc: 'Cruzar varias fuentes en simultáneo' },
+  { cmd: '/boost', label: 'Auditoría', desc: 'Doble control de totales y cuadratura' },
+  { cmd: '/schedule', label: 'Programar', desc: 'Dejar rutina o monitoreo programado' },
+  { cmd: '/learn', label: 'Guardar SOP', desc: 'Guardar este flujo como Playbook repetible' },
 ];
 
 const PROVIDERS = [
@@ -670,47 +670,47 @@ export default function App() {
         <main className="flex-1 flex flex-col bg-[#09090B] overflow-hidden select-text">
           <div className="flex-1 overflow-y-auto px-6 py-8 select-text">
             <div className="max-w-3xl mx-auto space-y-6">
-              {/* Empty State — Clean, Centered, High-Craft */}
+              {/* Empty State — Clean, Centered, Operations-Focused */}
               {messages.length === 0 && !isStreaming && (
-                <div className="pt-14 pb-6 space-y-8">
+                <div className="pt-14 pb-6 space-y-8 animate-fade-up">
                   <div className="space-y-2">
                     <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#EC0000]/10 border border-[#EC0000]/20 text-[#FF4D4D] text-[11px] font-medium">
                       <Sparkles className="w-3 h-3" />
-                      <span>Santander Agentic Harness</span>
+                      <span>Entorno Productivo de Operaciones · Santander</span>
                     </div>
                     <h1 className="text-2xl font-semibold text-white tracking-tight">
-                      ¿Qué vamos a construir o resolver hoy?
+                      ¿Qué proceso o gestión operativa realizamos hoy?
                     </h1>
                     <p className="text-sm text-zinc-400 max-w-xl">
-                      Conectado a tu workspace local, <span className="text-zinc-200">Phoenix / AWS Bedrock</span>, <span className="text-zinc-200">Jira & Confluence</span> y <span className="text-zinc-200">GitHub</span> con credenciales cifradas en Windows.
+                      Automatización de reportes Excel, presentaciones ejecutivas PowerPoint, ejecución de Playbooks operativos y seguimiento en <span className="text-zinc-200">Jira & Confluence</span>.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {[
                       {
-                        label: 'Diseñar arquitectura con /plan',
-                        desc: 'Genera un plan interactivo antes de tocar código',
+                        label: 'Conciliación y Reportes en Excel',
+                        desc: 'Cruza bases de datos, calcula KPIs/desvíos y exporta planillas formateadas',
                         prompt:
-                          '/plan Analiza este repositorio y propón un plan de arquitectura paso a paso',
+                          'Analiza los archivos de esta carpeta, genera un resumen de KPIs y exporta un reporte Excel ejecutivo',
                       },
                       {
-                        label: 'Sincronizar Jira + Confluence',
-                        desc: 'Consulta criterios de aceptación y documentación',
+                        label: 'Presentación Ejecutiva PowerPoint',
+                        desc: 'Genera un deck 16:9 de comité con indicadores, tablas y gráficos',
                         prompt:
-                          'Busca mis tickets activos en Jira y la documentación asociada en Confluence',
+                          'Ármame una presentación PowerPoint ejecutiva con el resumen operativo, KPIs principales y próximos pasos',
                       },
                       {
-                        label: 'Subagentes en paralelo (/teamwork)',
-                        desc: 'Delega investigación y ejecución concurrente',
+                        label: 'Gestión de Tickets y SLAs en Jira & Confluence',
+                        desc: 'Consulta estado de incidencias, bloqueos y procedimientos operativos',
                         prompt:
-                          '/teamwork Lanza un subagente research para auditar dependencias y seguridad',
+                          'Revisa los tickets activos en Jira, identifica desvíos o bloqueos y busca la normativa aplicable en Confluence',
                       },
                       {
-                        label: 'Preparar Pull Request en GitHub',
-                        desc: 'Revisa git diff, corre tests y abre el PR',
+                        label: 'Ejecutar Playbook / Flujo Operativo',
+                        desc: 'Corre los procesos recurrentes o rutinas definidas en tu carpeta',
                         prompt:
-                          'Revisa los cambios actuales con git status, corre los tests y prepara un PR',
+                          '/plan Revisa los archivos e instrucciones de esta carpeta y propón el plan de ejecución operativa',
                       },
                     ].map((card, i) => (
                       <button
@@ -966,7 +966,7 @@ export default function App() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Pregunta, usa /plan para diseñar o menciona un @archivo..."
+                  placeholder="Pide un reporte Excel, una presentación PowerPoint, consulta Jira/Confluence o ejecuta un Playbook (@archivo)..."
                   className="w-full bg-transparent px-4 pt-3 pb-1 text-[13.5px] text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none"
                 />
 
@@ -1038,7 +1038,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Código {previewFile ? `(${previewFile.name})` : ''}
+                  Archivo {previewFile ? `(${previewFile.name})` : ''}
                 </button>
                 <button
                   onClick={() => setRightTab('artifact')}
@@ -1048,7 +1048,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Artifacts ({artifacts.length})
+                  Planes & Reportes ({artifacts.length})
                 </button>
                 <button
                   onClick={() => setRightTab('activity')}
@@ -1058,7 +1058,7 @@ export default function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Actividad ({runtimeStatus.subagents.length + runtimeStatus.tasks.length})
+                  Procesos ({runtimeStatus.subagents.length + runtimeStatus.tasks.length})
                 </button>
               </div>
 

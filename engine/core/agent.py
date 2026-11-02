@@ -29,12 +29,12 @@ from engine.tools.terminal import terminal_manager
 logger = logging.getLogger("micelio.core.agent")
 
 SLASH_COMMAND_HINTS = {
-    "/plan": "The user invoked `/plan`. Design a detailed step-by-step implementation plan in an artifact (`implementation_plan.md`) with `RequestFeedback=true` and stop for review before writing application code.",
-    "/grill-me": "The user invoked `/grill-me`. Conduct a sharp, interactive architecture interview using `ask_question` to clarify edge cases and design tradeoffs before writing code.",
-    "/boost": "The user invoked `/boost`. Apply deep architectural reasoning, verify edge cases, and validate all changes with automated tests.",
-    "/teamwork": "The user invoked `/teamwork`. Decompose the project and launch parallel subagents (`invoke_subagent`) to research and implement components concurrently.",
-    "/schedule": "The user invoked `/schedule`. Use the `schedule` tool to set up the requested timer or recurring cron job.",
-    "/learn": "The user invoked `/learn`. Persist the learned workflow or corporate standard into a new or existing `SKILL.md` file inside the skills directory.",
+    "/plan": "El usuario invocó `/plan`. Diseña un Plan Operativo paso a paso en un artifact (`operational_plan.md`) con `RequestFeedback=true` y detente para que el usuario lo apruebe antes de ejecutar.",
+    "/grill-me": "El usuario invocó `/grill-me`. Realiza preguntas breves de negocio y reglas operativas usando `ask_question` para clarificar criterios antes de procesar los datos.",
+    "/boost": "El usuario invocó `/boost`. Realiza validaciones cruzadas de datos, verifica totales/controles de cuadratura y entrega un reporte exhaustivo.",
+    "/teamwork": "El usuario invocó `/teamwork`. Divide el proceso operativo y lanza subagentes en paralelo (`invoke_subagent`) para investigar en Jira/Confluence y procesar datos simultáneamente.",
+    "/schedule": "El usuario invocó `/schedule`. Utiliza la herramienta `schedule` para dejar programada esta rutina o monitoreo operativo.",
+    "/learn": "El usuario invocó `/learn`. Guarda este procedimiento operativo estándar (SOP / Playbook) en un archivo `PLAYBOOK.md` o `SKILL.md` para futuras ejecuciones.",
 }
 
 

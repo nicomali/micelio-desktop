@@ -1,20 +1,22 @@
 ---
 name: santander-standards
-description: Estándares de ingeniería, seguridad, uso de la librería corporativa phoenix, AWS Bedrock/Lambda y gestión de secretos con Windows Credential Manager en Santander.
+description: Estándares operativos, de gobernanza, seguridad de datos, conciliación Excel y trazabilidad en Jira/Confluence para entornos productivos de Operaciones de Santander.
 ---
 
-# Santander Engineering & Security Standards (`santander-standards`)
+# Estándares de Operaciones y Gobernanza Santander (`santander-standards`)
 
-Usa esta skill cuando diseñes o modifiques aplicaciones internas, lambdas, pipelines o integraciones con LLMs dentro del ecosistema de **Santander**.
+Usa esta skill en todas las tareas operativas, cruces de bases de datos, reportes regulatorios/ejecutivos y automatizaciones dentro de **Santander**.
 
-## 1. Gestión de Credenciales (Cero Secretos en Disco)
-- **Prohibido** escribir API keys, tokens PAT de GitHub, tokens de Atlassian o llaves IAM de AWS en archivos `.env`, `config.json` o código fuente.
-- Todas las credenciales locales deben almacenarse y leerse desde el **Administrador de Credenciales de Windows (WinCred)** a través de `engine.credentials.WindowsCredentialVault` (`micelio-desktop/*`).
+## 1. Higiene de la Carpeta Operativa (Cero Scripts Basura)
+- El usuario trabaja en una **carpeta operativa de negocio** (con archivos `.xlsx`, `.csv`, `.pptx`, `.pdf` o scripts productivos propios del área).
+- **Regla estricta**: Jamás dejes scripts auxiliares temporales (`.py`) sueltos en la carpeta del usuario. Todo script temporal para generar un Excel, cruzar datos o armar un PowerPoint debe crearse y ejecutarse desde el directorio aislado `scratch/` de la sesión, dejando en la carpeta del usuario **únicamente el archivo entregable final**.
 
-## 2. Consumo de Modelos LLM (`phoenix` & `boto3`)
-- En entornos corporativos de Santander, prioriza el proveedor `phoenix` (`PhoenixProvider`) o invocación vía `boto3` contra la Lambda/Bedrock corporativa.
-- Cuando uses certificados corporativos de Santander, configura `ca_bundle_path` apuntando al bundle `.pem` corporativo.
+## 2. Calidad en Entregables Excel (`.xlsx`)
+- Cuando generes o edites planillas Excel para Operaciones:
+  - Ajusta siempre el ancho de todas las columnas automáticamente para que ningún dato ni título quede cortado (`###`).
+  - Aplica formato de cabecera corporativo (fondo oscuro `#0F172A` o rojo Santander `#EC0000` con texto blanco en negrita).
+  - Formatea montos con separador de miles y moneda (`$#,##0.00`), porcentajes (`0.0%`) y fechas (`YYYY-MM-DD` o `DD/MM/YYYY`).
+  - Si es una conciliación o control, incluye una hoja de **Resumen Ejecutivo / KPIs** además del detalle.
 
-## 3. Trazabilidad y Auditoría
-- Todo cambio de código debe vincularse a un ticket de Jira (`SAN-XXX`) en el título del Pull Request y en los commits.
-- Documenta las decisiones de arquitectura en un Artifact (`architecture_plan.md` o `implementation_plan.md`) antes de ejecutar cambios masivos.
+## 3. Seguridad y Credenciales (`WinCred`)
+- Ninguna clave, token de Jira/Confluence ni credencial de AWS/Phoenix puede escribirse en archivos dentro de la carpeta operativa. Todo se lee desde el **Administrador de Credenciales de Windows**.
